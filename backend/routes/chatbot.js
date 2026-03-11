@@ -1,11 +1,11 @@
 const express = require("express");
-const Anthropic = require("@anthropic-ai/sdk");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { authenticateToken } = require("../middleware/auth");
 const { getAllDeadlines, getAllAnnouncements, getCourses } = require("../services/googleClassroom");
 const supabase = require("../db/supabase");
 
 const router = express.Router();
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const SYSTEM_PROMPT = `You are PulsBot, a friendly AI assistant for BUPulse — a smart school communication platform for Bulacan State University.
 
@@ -50,19 +50,20 @@ router.post("/message", authenticateToken, async (req, res) => {
       }
     } catch (e) {}
 
-    const messages = [
-      ...conversationHistory.slice(-10),
-      { role: "user", content: message + classroomContext },
-    ];
-
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      messages,
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
+      systemInstruction: SYSTEM_PROMPT,
     });
 
-    const reply = response.content[0]?.text || "Sorry, I couldn't process that. Try again!";
+    // Build chat history for Gemini
+    const history = conversationHistory.slice(-10).map(m => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    }));
+
+    const chat = model.startChat({ history });
+    const result = await chat.sendMessage(message + classroomContext);
+    const reply = result.response.text() || "Sorry, I couldn't process that. Try again!";
 
     await supabase.from("chatbot_conversations").insert({
       user_id: req.user.id,
