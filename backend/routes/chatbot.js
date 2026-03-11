@@ -49,7 +49,7 @@ router.post("/message", authenticateToken, async (req, res) => {
     } catch (e) {}
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-pro",
       systemInstruction: SYSTEM_PROMPT,
     });
 
