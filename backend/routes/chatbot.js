@@ -8,12 +8,10 @@ const router = express.Router();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const SYSTEM_PROMPT = `You are PulsBot, a friendly AI assistant for BUPulse — a smart school communication platform for Bulacan State University.
-
 Your role:
 - Help students with assignments, deadlines, and announcements from Google Classroom
 - Give study tips and time management advice
 - Be encouraging and supportive
-
 Personality:
 - Friendly and warm like a supportive classmate
 - Occasionally use Filipino phrases (e.g., "Kaya mo yan!", "Sure naman!")
@@ -55,11 +53,15 @@ router.post("/message", authenticateToken, async (req, res) => {
       systemInstruction: SYSTEM_PROMPT,
     });
 
-    // Build chat history for Gemini
-    const history = conversationHistory.slice(-10).map(m => ({
+    // Build chat history - Gemini requires it starts with 'user' and alternates
+    const rawHistory = conversationHistory.slice(-10).map(m => ({
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: m.content }],
     }));
+
+    // Remove leading 'model' messages — Gemini requires first message is 'user'
+    const firstUserIndex = rawHistory.findIndex(m => m.role === "user");
+    const history = firstUserIndex >= 0 ? rawHistory.slice(firstUserIndex) : [];
 
     const chat = model.startChat({ history });
     const result = await chat.sendMessage(message + classroomContext);
