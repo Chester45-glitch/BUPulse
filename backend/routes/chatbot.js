@@ -48,23 +48,22 @@ router.post("/message", authenticateToken, async (req, res) => {
       }
     } catch (e) {}
 
-    const model = genAI.getGenerativeModel({
-      model: "gemini-pro",
-      systemInstruction: SYSTEM_PROMPT,
-    });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
-    // Build chat history - Gemini requires it starts with 'user' and alternates
     const rawHistory = conversationHistory.slice(-10).map(m => ({
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: m.content }],
     }));
 
-    // Remove leading 'model' messages — Gemini requires first message is 'user'
     const firstUserIndex = rawHistory.findIndex(m => m.role === "user");
     const history = firstUserIndex >= 0 ? rawHistory.slice(firstUserIndex) : [];
 
     const chat = model.startChat({ history });
-    const result = await chat.sendMessage(message + classroomContext);
+    const fullMessage = history.length === 0
+      ? `${SYSTEM_PROMPT}\n\n${message}${classroomContext}`
+      : message + classroomContext;
+
+    const result = await chat.sendMessage(fullMessage);
     const reply = result.response.text() || "Sorry, I couldn't process that. Try again!";
 
     await supabase.from("chatbot_conversations").insert({
