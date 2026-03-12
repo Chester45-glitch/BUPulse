@@ -38,7 +38,7 @@ export default function Profile() {
             }
           </div>
           <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>{user?.name}</h2>
-          <p style={{ fontSize: 14, color: "var(--text-muted)" }}>Student · Bulacan State University</p>
+          <p style={{ fontSize: 14, color: "var(--text-muted)" }}>Student · Bicol University</p>
         </div>
       </div>
 
