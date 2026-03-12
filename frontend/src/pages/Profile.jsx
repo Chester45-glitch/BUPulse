@@ -48,7 +48,7 @@ export default function Profile() {
         <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>From your Google account</p>
         <InfoRow icon="👤" label="Full Name" value={user?.name} />
         <InfoRow icon="📧" label="Email Address" value={user?.email} />
-        <InfoRow icon="🏫" label="Institution" value="Bulacan State University" />
+        <InfoRow icon="🏫" label="Institution" value="Bicol University" />
         <InfoRow icon="🎓" label="Role" value="Student" />
         <div style={{ paddingTop: 14 }}>
           <InfoRow icon="🔐" label="Sign-in Method" value="Google OAuth 2.0" />
