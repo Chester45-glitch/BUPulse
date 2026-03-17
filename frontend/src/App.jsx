@@ -8,19 +8,38 @@ import AuthCallback from "./pages/AuthCallback";
 import Profile from "./pages/Profile";
 import EnrolledClasses from "./pages/EnrolledClasses";
 import PendingActivities from "./pages/PendingActivities";
+import ProfessorDashboard from "./pages/ProfessorDashboard";
+import ParentDashboard from "./pages/ParentDashboard";
 import Layout from "./components/Layout";
 
 const Spinner = () => (
-  <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--green-900)", flexDirection: "column", gap: 16 }}>
-    <div style={{ width: 48, height: 48, border: "3px solid rgba(255,255,255,0.2)", borderTopColor: "var(--accent-gold)", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-    <p style={{ color: "var(--green-200)", fontFamily: "var(--font-body)" }}>Loading BUPulse...</p>
+  <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0f2010", flexDirection: "column", gap: 16 }}>
+    <div style={{ width: 48, height: 48, border: "3px solid rgba(255,255,255,0.15)", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+    <p style={{ color: "#a8c5a0", fontFamily: "var(--font-body)" }}>Loading BUPulse...</p>
+    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
   </div>
 );
 
-const PrivateRoute = ({ children }) => {
+const PrivateRoute = ({ children, allowedRoles }) => {
   const { user, loading } = useAuth();
   if (loading) return <Spinner />;
-  return user ? children : <Navigate to="/" replace />;
+  if (!user) return <Navigate to="/" replace />;
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    // Redirect to their correct dashboard
+    if (user.role === "professor") return <Navigate to="/professor" replace />;
+    if (user.role === "parent") return <Navigate to="/parent" replace />;
+    return <Navigate to="/dashboard" replace />;
+  }
+  return children;
+};
+
+const RoleRedirect = () => {
+  const { user, loading } = useAuth();
+  if (loading) return <Spinner />;
+  if (!user) return <Navigate to="/" replace />;
+  if (user.role === "professor") return <Navigate to="/professor" replace />;
+  if (user.role === "parent") return <Navigate to="/parent" replace />;
+  return <Navigate to="/dashboard" replace />;
 };
 
 export default function App() {
@@ -30,9 +49,11 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
+        <Route path="/" element={user ? <RoleRedirect /> : <Login />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
-        <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
+
+        {/* Student routes */}
+        <Route path="/" element={<PrivateRoute allowedRoles={["student"]}><Layout /></PrivateRoute>}>
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="announcements" element={<Announcements />} />
           <Route path="ask-pulsbot" element={<AskPulsBot />} />
@@ -40,6 +61,20 @@ export default function App() {
           <Route path="enrolled-classes" element={<EnrolledClasses />} />
           <Route path="pending-activities" element={<PendingActivities />} />
         </Route>
+
+        {/* Professor routes */}
+        <Route path="/professor" element={<PrivateRoute allowedRoles={["professor"]}><Layout role="professor" /></PrivateRoute>}>
+          <Route index element={<ProfessorDashboard />} />
+          <Route path="announcements" element={<Announcements role="professor" />} />
+          <Route path="profile" element={<Profile />} />
+        </Route>
+
+        {/* Parent routes */}
+        <Route path="/parent" element={<PrivateRoute allowedRoles={["parent"]}><Layout role="parent" /></PrivateRoute>}>
+          <Route index element={<ParentDashboard />} />
+          <Route path="profile" element={<Profile />} />
+        </Route>
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
