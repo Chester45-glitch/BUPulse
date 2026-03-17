@@ -4,6 +4,7 @@ const { google } = require("googleapis");
 const jwt = require("jsonwebtoken");
 const supabase = require("../db/supabase");
 const { getTaughtCourses } = require("../services/googleClassroom");
+const { authenticateToken } = require("../middleware/auth");
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
@@ -11,16 +12,11 @@ const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_REDIRECT_URI
 );
 
-// Detect user role based on Google Classroom data
 const detectRole = async (accessToken, refreshToken, requestedRole) => {
-  // If user explicitly chose parent, use that
   if (requestedRole === "parent") return "parent";
-
   try {
-    // Check if they teach any courses → professor
     const taughtCourses = await getTaughtCourses(accessToken, refreshToken);
     if (taughtCourses.length > 0) {
-      // If they have taught courses but requested student, allow student view
       if (requestedRole === "student") return "student";
       return "professor";
     }
@@ -30,45 +26,33 @@ const detectRole = async (accessToken, refreshToken, requestedRole) => {
   }
 };
 
-// Step 1: Redirect to Google with role in state
 router.get("/google", (req, res) => {
-  const role = req.query.role || "student"; // student | professor | parent
+  const role = req.query.role || "student";
   const authUrl = oauth2Client.generateAuthUrl({
-    access_type: "offline",
-    prompt: "consent",
+    access_type: "offline", prompt: "consent",
     scope: [
-      "openid",
-      "profile",
-      "email",
+      "openid", "profile", "email",
       "https://www.googleapis.com/auth/classroom.courses.readonly",
       "https://www.googleapis.com/auth/classroom.coursework.me.readonly",
       "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
       "https://www.googleapis.com/auth/classroom.announcements.readonly",
-      "https://www.googleapis.com/auth/classroom.rosters.readonly",
-      // Professor scopes
       "https://www.googleapis.com/auth/classroom.announcements",
+      "https://www.googleapis.com/auth/classroom.rosters.readonly",
     ],
-    state: role, // pass role through OAuth flow
+    state: role,
   });
   res.redirect(authUrl);
 });
 
-// Step 2: Handle callback
 router.get("/google/callback", async (req, res) => {
   const { code, state: requestedRole } = req.query;
-
   try {
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
-
-    // Get user info
     const oauth2 = google.oauth2({ version: "v2", auth: oauth2Client });
     const { data: profile } = await oauth2.userinfo.get();
-
-    // Detect role
     const role = await detectRole(tokens.access_token, tokens.refresh_token, requestedRole);
 
-    // Upsert user in Supabase
     const { data: user, error } = await supabase
       .from("users")
       .upsert({
@@ -79,6 +63,7 @@ router.get("/google/callback", async (req, res) => {
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token || null,
         role,
+        deleted_at: null, // re-activate if soft deleted
         updated_at: new Date().toISOString(),
       }, { onConflict: "google_id" })
       .select()
@@ -86,7 +71,11 @@ router.get("/google/callback", async (req, res) => {
 
     if (error) throw error;
 
-    // Sign JWT
+    // Block soft-deleted accounts
+    if (user.deleted_at) {
+      return res.redirect(`${process.env.FRONTEND_URL}/?error=account_deleted`);
+    }
+
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
@@ -100,24 +89,57 @@ router.get("/google/callback", async (req, res) => {
   }
 });
 
-// Get current user
-router.get("/me", async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "No token" });
-
+// Get current user (includes notifications_enabled)
+router.get("/me", authenticateToken, async (req, res) => {
   try {
-    const token = authHeader.replace("Bearer ", "");
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
     const { data: user } = await supabase
       .from("users")
-      .select("id, email, name, picture, role")
-      .eq("id", decoded.userId)
+      .select("id, email, name, picture, role, notifications_enabled")
+      .eq("id", req.user.id)
+      .is("deleted_at", null)
       .single();
 
+    if (!user) return res.status(404).json({ error: "User not found" });
     res.json({ user });
   } catch {
-    res.status(401).json({ error: "Invalid token" });
+    res.status(500).json({ error: "Failed to fetch user" });
+  }
+});
+
+// ── DELETE /api/auth/account ─────────────────────────────────
+// Soft-delete: sets deleted_at timestamp, clears tokens
+router.delete("/account", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // 1. Soft-delete the user (keeps row for data integrity)
+    const { error: userErr } = await supabase
+      .from("users")
+      .update({
+        deleted_at: new Date().toISOString(),
+        access_token: null,
+        refresh_token: null,
+        notifications_enabled: false,
+      })
+      .eq("id", userId);
+
+    if (userErr) throw userErr;
+
+    // 2. Delete linked parent relationships
+    await supabase.from("parent_links")
+      .delete()
+      .or(`parent_id.eq.${userId},student_id.eq.${userId}`);
+
+    // 3. Delete chatbot history
+    await supabase.from("chatbot_conversations").delete().eq("user_id", userId);
+
+    // 4. Delete notification logs
+    await supabase.from("notification_logs").delete().eq("user_id", userId);
+
+    res.json({ success: true, message: "Account deleted successfully" });
+  } catch (err) {
+    console.error("Delete account error:", err);
+    res.status(500).json({ error: "Failed to delete account" });
   }
 });
 
