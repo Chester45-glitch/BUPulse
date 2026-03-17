@@ -161,13 +161,17 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
   const { dark, toggle: toggleDark } = useTheme();
   const { logout } = useAuth();
   const navigate = useNavigate();
-  const [expanded, setExpanded] = useState(false);
+  const [expandedState, setExpandedState] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const timer = useRef(null);
   const switcherRef = useRef(null);
 
-  const onEnter = useCallback(() => { clearTimeout(timer.current); setExpanded(true); }, []);
-  const onLeave = useCallback(() => { timer.current = setTimeout(() => { setExpanded(false); setSwitcherOpen(false); }, 300); }, []);
+  // On mobile, sidebar is expanded whenever it's open via hamburger (no hover available)
+  // On desktop, it expands on mouse hover
+  const effectiveExpanded = expandedState || isOpen;
+
+  const onEnter = useCallback(() => { clearTimeout(timer.current); setExpandedState(true); }, []);
+  const onLeave = useCallback(() => { timer.current = setTimeout(() => { setExpandedState(false); setSwitcherOpen(false); }, 300); }, []);
 
   const navItems = NAV_ITEMS[role] || NAV_ITEMS.student;
   const accent   = ROLE_ACCENT[role] || ROLE_ACCENT.student;
@@ -191,7 +195,7 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
           <div style={{ width: 44, height: 44, borderRadius: 12, background: "linear-gradient(135deg,#d4820a,#f59e0b)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>📚</div>
 
           {/* Brand + role */}
-          <div style={{ opacity: expanded ? 1 : 0, transform: expanded ? "translateX(0)" : "translateX(-8px)", transition: "all 0.18s ease", flex: 1, minWidth: 0, overflow: "hidden" }}>
+          <div style={{ opacity: effectiveExpanded ? 1 : 0, transform: effectiveExpanded ? "translateX(0)" : "translateX(-8px)", transition: "all 0.18s ease", flex: 1, minWidth: 0, overflow: "hidden" }}>
             <span style={{ color: "#fff", fontSize: 16, fontFamily: "var(--font-display, serif)", fontWeight: 600, display: "block", lineHeight: 1.2 }}>BUPulse</span>
             <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.7px", color: accent }}>{role}</span>
           </div>
@@ -207,7 +211,7 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
                 border: "none", cursor: "pointer", padding: 0, flexShrink: 0,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 color: "rgba(255,255,255,0.5)", transition: "all 0.14s",
-                opacity: expanded ? 1 : 0,
+                opacity: effectiveExpanded ? 1 : 0,
               }}
               onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.12)"}
               onMouseLeave={e => { if (!switcherOpen) e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
@@ -215,7 +219,7 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
               <Icons.switch />
             </button>
 
-            {switcherOpen && expanded && (
+            {switcherOpen && effectiveExpanded && (
               <AccountSwitcher user={user} accent={accent} onClose={() => setSwitcherOpen(false)} />
             )}
           </div>
@@ -228,7 +232,7 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
               key={item.to}
               {...item}
               end={item.to === "/professor" || item.to === "/parent"}
-              expanded={expanded}
+              expanded={effectiveExpanded}
               accent={accent}
               onClick={onClose}
             />
@@ -253,7 +257,7 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
             <div style={{ width: 44, height: 44, borderRadius: 12, background: "rgba(255,255,255,0.04)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "rgba(255,255,255,0.6)" }}>
               {dark ? <Icons.sun /> : <Icons.moon />}
             </div>
-            <span style={{ fontSize: 14, whiteSpace: "nowrap", opacity: expanded ? 1 : 0, transition: "opacity 0.18s" }}>{dark ? "Light mode" : "Dark mode"}</span>
+            <span style={{ fontSize: 14, whiteSpace: "nowrap", opacity: effectiveExpanded ? 1 : 0, transition: "opacity 0.18s" }}>{dark ? "Light mode" : "Dark mode"}</span>
           </button>
 
           {/* Logout */}
@@ -272,13 +276,13 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
             <div style={{ width: 44, height: 44, borderRadius: 12, background: "rgba(220,38,38,0.06)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <Icons.logout />
             </div>
-            <span style={{ fontSize: 14, whiteSpace: "nowrap", opacity: expanded ? 1 : 0, transition: "opacity 0.18s" }}>Sign out</span>
+            <span style={{ fontSize: 14, whiteSpace: "nowrap", opacity: effectiveExpanded ? 1 : 0, transition: "opacity 0.18s" }}>Sign out</span>
           </button>
 
           {/* User chip */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px 0", borderTop: "1px solid rgba(255,255,255,0.06)", marginTop: 4, overflow: "hidden" }}>
             <Avatar user={user} size={36} accent={accent} />
-            <div style={{ opacity: expanded ? 1 : 0, transition: "opacity 0.18s", minWidth: 0 }}>
+            <div style={{ opacity: effectiveExpanded ? 1 : 0, transition: "opacity 0.18s", minWidth: 0 }}>
               <p style={{ color: "#fff", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.name || "User"}</p>
               <p style={{ color: "rgba(255,255,255,0.38)", fontSize: 10, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.email}</p>
             </div>

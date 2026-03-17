@@ -23,7 +23,7 @@ export default function Layout({ role }) {
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
         <Header onMenuClick={() => setSidebarOpen(true)} role={userRole} />
-        <main style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }} className="page-main">
+        <main style={{ flex: 1, padding: "24px 28px", overflowY: "auto", overflowX: "hidden" }} className="page-main">
           <Outlet />
         </main>
       </div>
