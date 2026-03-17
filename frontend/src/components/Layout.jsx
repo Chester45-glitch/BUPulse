@@ -11,8 +11,8 @@ export default function Layout({ role }) {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg-primary)" }}>
-      {/* Sidebar takes 64px collapsed, 220px expanded — but we always reserve 64px */}
-      <div style={{ width: 64, flexShrink: 0 }} className="sidebar-spacer" />
+      {/* Reserve 72px for collapsed sidebar */}
+      <div style={{ width: 72, flexShrink: 0 }} className="sidebar-spacer" />
 
       <Sidebar
         isOpen={sidebarOpen}
@@ -21,7 +21,7 @@ export default function Layout({ role }) {
         role={userRole}
       />
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
         <Header onMenuClick={() => setSidebarOpen(true)} role={userRole} />
         <main style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }} className="page-main">
           <Outlet />
