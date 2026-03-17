@@ -4,7 +4,7 @@ const { authenticateToken } = require("../middleware/auth");
 const supabase = require("../db/supabase");
 
 // Parent links to a student email
-router.post("/link-student", verifyToken, async (req, res) => {
+router.post("/link-student", authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== "parent") return res.status(403).json({ error: "Parent access required" });
     const { studentEmail } = req.body;
@@ -24,7 +24,7 @@ router.post("/link-student", verifyToken, async (req, res) => {
 });
 
 // Get linked students
-router.get("/students", verifyToken, async (req, res) => {
+router.get("/students", authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== "parent") return res.status(403).json({ error: "Parent access required" });
     const { data: links } = await supabase
@@ -38,7 +38,7 @@ router.get("/students", verifyToken, async (req, res) => {
 });
 
 // Get student's data (parent view)
-router.get("/student/:studentId/data", verifyToken, async (req, res) => {
+router.get("/student/:studentId/data", authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== "parent") return res.status(403).json({ error: "Parent access required" });
 
