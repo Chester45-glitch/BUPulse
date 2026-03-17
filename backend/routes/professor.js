@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { verifyToken } = require("../middleware/auth");
+const { authenticateToken } = require("../middleware/auth");
 const supabase = require("../db/supabase");
 const { getTaughtCourses, getAllAnnouncements, createAnnouncement, getCourseStudents } = require("../services/googleClassroom");
 
