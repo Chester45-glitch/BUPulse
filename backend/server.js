@@ -6,6 +6,8 @@ const authRoutes = require("./routes/auth");
 const classroomRoutes = require("./routes/classroom");
 const notificationRoutes = require("./routes/notifications");
 const chatbotRoutes = require("./routes/chatbot");
+const professorRoutes = require("./routes/professor");
+const parentRoutes = require("./routes/parent");
 const { startScheduler } = require("./services/scheduler");
 
 const app = express();
@@ -36,9 +38,11 @@ app.use("/api/auth", authRoutes);
 app.use("/api/classroom", classroomRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/chatbot", chatbotRoutes);
+app.use("/api/professor", professorRoutes);
+app.use("/api/parent", parentRoutes);
 
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", message: "BUPulse API is running" });
+  res.json({ status: "ok", message: "BUPulse API is running", timestamp: new Date() });
 });
 
 app.use((err, req, res, next) => {
