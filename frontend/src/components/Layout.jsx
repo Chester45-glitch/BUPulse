@@ -4,23 +4,25 @@ import { useAuth } from "../context/AuthContext";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
 
-export default function Layout() {
+export default function Layout({ role }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user } = useAuth();
+  const userRole = role || user?.role || "student";
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg-primary)" }}>
-      {sidebarOpen && (
-        <div onClick={() => setSidebarOpen(false)} className="mobile-overlay" style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
-          zIndex: 40, display: "none",
-        }} />
-      )}
+      {/* Sidebar takes 64px collapsed, 220px expanded — but we always reserve 64px */}
+      <div style={{ width: 64, flexShrink: 0 }} className="sidebar-spacer" />
 
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} user={user} />
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        user={user}
+        role={userRole}
+      />
 
-      <div style={{ marginLeft: "var(--sidebar-width)", flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }} className="main-content">
-        <Header onMenuClick={() => setSidebarOpen(true)} />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <Header onMenuClick={() => setSidebarOpen(true)} role={userRole} />
         <main style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }} className="page-main">
           <Outlet />
         </main>
@@ -28,8 +30,7 @@ export default function Layout() {
 
       <style>{`
         @media (max-width: 768px) {
-          .mobile-overlay { display: block !important; }
-          .main-content { margin-left: 0 !important; }
+          .sidebar-spacer { display: none !important; }
           .page-main { padding: 16px !important; }
         }
       `}</style>
