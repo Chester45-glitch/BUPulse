@@ -11,7 +11,7 @@ const professorOnly = (req, res, next) => {
 };
 
 // Get professor's taught courses
-router.get("/courses", verifyToken, professorOnly, async (req, res) => {
+router.get("/courses", authenticateToken, professorOnly, async (req, res) => {
   try {
     const { data: user } = await supabase.from("users").select("access_token, refresh_token").eq("id", req.user.userId).single();
     const courses = await getTaughtCourses(user.access_token, user.refresh_token);
@@ -22,7 +22,7 @@ router.get("/courses", verifyToken, professorOnly, async (req, res) => {
 });
 
 // Get professor's announcements
-router.get("/announcements", verifyToken, professorOnly, async (req, res) => {
+router.get("/announcements", authenticateToken, professorOnly, async (req, res) => {
   try {
     const { data: user } = await supabase.from("users").select("access_token, refresh_token").eq("id", req.user.userId).single();
     const courses = await getTaughtCourses(user.access_token, user.refresh_token);
@@ -35,7 +35,7 @@ router.get("/announcements", verifyToken, professorOnly, async (req, res) => {
 });
 
 // Create announcement
-router.post("/announcements", verifyToken, professorOnly, async (req, res) => {
+router.post("/announcements", authenticateToken, professorOnly, async (req, res) => {
   try {
     const { courseId, text } = req.body;
     if (!courseId || !text) return res.status(400).json({ error: "courseId and text required" });
@@ -48,7 +48,7 @@ router.post("/announcements", verifyToken, professorOnly, async (req, res) => {
 });
 
 // Get students in a course
-router.get("/courses/:courseId/students", verifyToken, professorOnly, async (req, res) => {
+router.get("/courses/:courseId/students", authenticateToken, professorOnly, async (req, res) => {
   try {
     const { data: user } = await supabase.from("users").select("access_token, refresh_token").eq("id", req.user.userId).single();
     const students = await getCourseStudents(req.params.courseId, user.access_token, user.refresh_token);
