@@ -1,102 +1,74 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ── Design tokens ─────────────────────────────────────────── */
 :root {
   /* Brand */
-  --green-900: #1a2e1a;
-  --green-800: #2d5a1b;
-  --green-700: #3a7022;
-  --green-600: #4a8a2a;
-  --green-500: #5a9e35;
-  --green-200: #a8c5a0;
-  --green-100: #d4e8cc;
-  --green-50:  #f0f7ee;
-  --accent-gold: #d4820a;
-  --accent-amber: #f59e0b;
+  --green-900: #14251a; --green-800: #1a3320; --green-700: #166534;
+  --green-600: #16a34a; --green-500: #22c55e; --green-200: #bbf7d0;
+  --green-100: #dcfce7; --green-50: #f0fdf4;
+  --accent-gold: #d4820a; --accent-amber: #f59e0b;
 
-  /* Light mode (default) */
-  --bg-primary: #f4f7f4;
-  --bg-secondary: #ffffff;
-  --bg-tertiary: #f0f4f0;
-  --border-color: #e5e7eb;
-  --text-primary: #111827;
-  --text-secondary: #374151;
-  --text-muted: #6b7280;
-  --text-faint: #9ca3af;
-  --card-bg: #ffffff;
-  --card-border: #e5e7eb;
-  --input-bg: #ffffff;
-  --input-border: #d1d5db;
-  --sidebar-bg: #1a2e1a;
-  --sidebar-text: #a8c5a0;
-  --header-bg: #ffffff;
-  --header-border: #e5e7eb;
-  --dropdown-bg: #ffffff;
-  --dropdown-border: #e5e7eb;
+  /* Light mode */
+  --bg-primary: #f5f7f5; --bg-secondary: #ffffff; --bg-tertiary: #f0f4f1;
+  --border-color: #e5e7eb; --card-bg: #ffffff; --card-border: #e9ecef;
+  --input-bg: #ffffff; --input-border: #d1d5db;
+  --text-primary: #111827; --text-secondary: #374151;
+  --text-muted: #6b7280; --text-faint: #9ca3af;
+  --sidebar-bg: #111a11;
+  --header-bg: #ffffff; --header-border: #e9ecef;
+  --dropdown-bg: #ffffff; --dropdown-border: #e5e7eb;
   --hover-bg: rgba(0,0,0,0.04);
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.04);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-  --shadow-lg: 0 10px 30px rgba(0,0,0,0.10);
-  --shadow-xl: 0 20px 60px rgba(0,0,0,0.12);
+  --shadow-lg: 0 10px 28px rgba(0,0,0,0.10);
+  --shadow-xl: 0 20px 48px rgba(0,0,0,0.12);
 
-  /* Fonts */
+  /* Typography */
   --font-display: 'DM Serif Display', Georgia, serif;
-  --font-body: 'DM Sans', system-ui, sans-serif;
+  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
 
   /* Layout */
-  --sidebar-width: 220px;
   --header-height: 62px;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px; --radius-xl: 18px;
 }
 
+/* Dark mode */
 [data-theme="dark"] {
-  --bg-primary: #0f1a0f;
-  --bg-secondary: #1a2e1a;
-  --bg-tertiary: #152015;
-  --border-color: rgba(255,255,255,0.08);
-  --text-primary: #f0f7ee;
-  --text-secondary: #d4e8cc;
-  --text-muted: #a8c5a0;
-  --text-faint: #6b8f6b;
-  --card-bg: #1e341e;
-  --card-border: rgba(255,255,255,0.07);
-  --input-bg: #1e341e;
-  --input-border: rgba(255,255,255,0.12);
-  --header-bg: #152015;
-  --header-border: rgba(255,255,255,0.07);
-  --dropdown-bg: #1e341e;
-  --dropdown-border: rgba(255,255,255,0.1);
-  --hover-bg: rgba(255,255,255,0.06);
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
-  --shadow-lg: 0 10px 30px rgba(0,0,0,0.5);
-  --shadow-xl: 0 20px 60px rgba(0,0,0,0.6);
+  --bg-primary: #0d180d; --bg-secondary: #131f13; --bg-tertiary: #111a11;
+  --border-color: rgba(255,255,255,0.08); --card-bg: #182018; --card-border: rgba(255,255,255,0.07);
+  --input-bg: #182018; --input-border: rgba(255,255,255,0.12);
+  --text-primary: #f0fdf4; --text-secondary: #d1fae5;
+  --text-muted: #6ee7b7; --text-faint: #34d399;
+  --header-bg: #111a11; --header-border: rgba(255,255,255,0.07);
+  --dropdown-bg: #182018; --dropdown-border: rgba(255,255,255,0.1);
+  --hover-bg: rgba(255,255,255,0.05);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3); --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+  --shadow-lg: 0 10px 28px rgba(0,0,0,0.5); --shadow-xl: 0 20px 48px rgba(0,0,0,0.6);
 }
 
 html, body {
-  height: 100%;
-  font-family: var(--font-body);
-  font-size: 15px;
-  color: var(--text-primary);
-  background: var(--bg-primary);
-  -webkit-font-smoothing: antialiased;
+  height: 100%; font-family: var(--font-body); font-size: 15px;
+  color: var(--text-primary); background: var(--bg-primary);
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
   transition: background 0.3s ease, color 0.3s ease;
 }
-
 #root { height: 100%; }
+
 a { text-decoration: none; color: inherit; }
 button { font-family: var(--font-body); cursor: pointer; border: none; background: none; }
 input, textarea, select { font-family: var(--font-body); }
 
+/* Scrollbar */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--green-200); border-radius: 99px; }
+::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
 
-@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes fadeInScale { from { opacity: 0; transform: scale(0.95) translateY(-4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-@keyframes spin { to { transform: rotate(360deg); } }
-@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+/* Common animations */
+@keyframes fadeIn  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeUp  { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes spin    { to { transform: rotate(360deg); } }
+@keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 @keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
-@keyframes badgePop { 0% { transform: scale(0); } 70% { transform: scale(1.2); } 100% { transform: scale(1); } }
+@keyframes badgePop{ 0% { transform: scale(0); } 70% { transform: scale(1.2); } 100% { transform: scale(1); } }
+@keyframes scaleIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
