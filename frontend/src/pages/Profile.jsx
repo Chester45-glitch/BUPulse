@@ -1,372 +1,349 @@
 import { useState, useEffect } from "react";
-import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import api from "../utils/api";
 
-/* ── Helpers ─────────────────────────────────────────────────── */
+/* ── Clean monochrome icons ──────────────────────────────────── */
+const Ico = ({ children, size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+);
+const IcoUser     = () => <Ico><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></Ico>;
+const IcoMail     = () => <Ico><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></Ico>;
+const IcoShield   = () => <Ico><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></Ico>;
+const IcoBadge    = () => <Ico><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></Ico>;
+const IcoBell     = () => <Ico><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></Ico>;
+const IcoTrash    = () => <Ico><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></Ico>;
+const IcoChevron  = () => <Ico size={16}><polyline points="9 18 15 12 9 6"/></Ico>;
+const IcoCheck    = () => <Ico size={14}><polyline points="20 6 9 17 4 12"/></Ico>;
+const IcoAlert    = () => <Ico size={16}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></Ico>;
+
+const ROLE_CFG = {
+  student:   { color: "#16a34a", bg: "rgba(22,163,74,0.1)",   border: "rgba(22,163,74,0.3)",   label: "Student"   },
+  professor: { color: "#2563eb", bg: "rgba(37,99,235,0.1)",   border: "rgba(37,99,235,0.3)",   label: "Professor" },
+  parent:    { color: "#9333ea", bg: "rgba(147,51,234,0.1)",  border: "rgba(147,51,234,0.3)",  label: "Parent"    },
+};
+
 const initials = (n = "") => {
   const p = n.trim().split(" ");
   return p.length >= 2 ? `${p[0][0]}${p[1][0]}`.toUpperCase() : n.slice(0, 2).toUpperCase();
 };
 
-const ROLE_META = {
-  student:   { color: "#22c55e", bg: "#f0fdf4", border: "#bbf7d0", label: "Student",   desc: "Bulacan State University" },
-  professor: { color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe", label: "Professor", desc: "Faculty Member" },
-  parent:    { color: "#a855f7", bg: "#faf5ff", border: "#e9d5ff", label: "Parent",    desc: "Parent / Guardian" },
-};
-
-/* ── Toggle switch ───────────────────────────────────────────── */
-function Toggle({ checked, onChange, disabled }) {
+/* ── NotificationToggle ──────────────────────────────────────── */
+function NotificationToggle({ enabled, onChange, loading }) {
   return (
     <button
-      onClick={() => !disabled && onChange(!checked)}
-      aria-checked={checked}
-      role="switch"
-      disabled={disabled}
+      onClick={() => !loading && onChange(!enabled)}
+      aria-label={enabled ? "Disable notifications" : "Enable notifications"}
+      aria-pressed={enabled}
       style={{
-        width: 46, height: 26, borderRadius: 13, border: "none", cursor: disabled ? "not-allowed" : "pointer",
-        background: checked ? "#16a34a" : "var(--border-color)",
-        position: "relative", transition: "background 0.22s ease", flexShrink: 0,
-        opacity: disabled ? 0.55 : 1,
+        width: 46, height: 26, borderRadius: 13, position: "relative",
+        background: enabled ? "#16a34a" : "var(--border-color, #d1d5db)",
+        border: "none", cursor: loading ? "not-allowed" : "pointer",
+        transition: "background 0.22s ease", flexShrink: 0,
+        opacity: loading ? 0.6 : 1,
       }}
     >
-      <span style={{
-        position: "absolute", top: 3, left: checked ? 23 : 3,
+      <div style={{
+        position: "absolute", top: 3, left: enabled ? 23 : 3,
         width: 20, height: 20, borderRadius: "50%", background: "#fff",
+        boxShadow: "0 1px 4px rgba(0,0,0,0.18)",
         transition: "left 0.22s cubic-bezier(0.4,0,0.2,1)",
-        boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
-      }} />
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        {loading && <div style={{ width: 10, height: 10, border: "1.5px solid #d1d5db", borderTopColor: "#16a34a", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />}
+      </div>
     </button>
   );
 }
 
-/* ── SettingRow ──────────────────────────────────────────────── */
-function SettingRow({ icon, label, desc, children }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 0", borderBottom: "1px solid var(--border-color)" }}>
-      <div style={{ width: 38, height: 38, borderRadius: 10, background: "var(--bg-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
-        {icon}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{label}</div>
-        {desc && <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 1 }}>{desc}</div>}
-      </div>
-      <div style={{ flexShrink: 0 }}>{children}</div>
-    </div>
-  );
-}
-
-/* ── DeleteConfirmModal ──────────────────────────────────────── */
+/* ── DeleteModal ─────────────────────────────────────────────── */
 function DeleteModal({ onConfirm, onCancel, loading }) {
-  const [typed, setTyped] = useState("");
-  const confirmed = typed.trim().toUpperCase() === "DELETE";
+  const [input, setInput] = useState("");
+  const [error, setError] = useState("");
+  const CONFIRM_PHRASE = "delete my account";
+  const valid = input.toLowerCase().trim() === CONFIRM_PHRASE;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!valid) { setError(`Type "${CONFIRM_PHRASE}" exactly to confirm.`); return; }
+    onConfirm();
+  };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(4px)", animation: "fadeIn 0.18s ease" }}>
-      <div style={{ background: "var(--card-bg)", borderRadius: 18, padding: "28px 28px 24px", maxWidth: 400, width: "100%", border: "1px solid var(--card-border)", boxShadow: "0 24px 64px rgba(0,0,0,0.25)", animation: "scaleIn 0.2s ease" }}>
-        <div style={{ width: 48, height: 48, borderRadius: 14, background: "#fee2e2", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, marginBottom: 16 }}>🗑️</div>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(3px)" }}>
+      <div style={{
+        background: "var(--card-bg, #fff)", borderRadius: 18, padding: "28px 28px 24px",
+        width: "100%", maxWidth: 420,
+        boxShadow: "0 24px 60px rgba(0,0,0,0.2)",
+        animation: "scaleIn 0.18s ease",
+      }}>
+        {/* Warning icon */}
+        <div style={{ width: 52, height: 52, borderRadius: 14, background: "#fee2e2", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18, color: "#dc2626" }}>
+          <IcoTrash />
+        </div>
 
-        <h3 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>Delete Account?</h3>
-        <p style={{ fontSize: 14, color: "var(--text-muted)", lineHeight: 1.65, marginBottom: 18 }}>
-          This will permanently delete your account, all data, and linked information. <strong>This action cannot be undone.</strong>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>Delete account?</h3>
+        <p style={{ fontSize: 14, color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 20 }}>
+          This action is <strong style={{ color: "var(--text-primary)" }}>permanent</strong>. Your profile, preferences, and linked data will be removed. You will no longer be able to log in.
         </p>
 
-        <div style={{ background: "var(--bg-tertiary)", borderRadius: 10, padding: "12px 14px", marginBottom: 18, border: "1px solid var(--border-color)" }}>
-          <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 8 }}>Type <strong>DELETE</strong> to confirm</p>
+        <form onSubmit={handleSubmit}>
+          <label style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 7, letterSpacing: "0.3px" }}>
+            Type <span style={{ color: "#dc2626", fontFamily: "monospace" }}>delete my account</span> to confirm
+          </label>
           <input
-            value={typed}
-            onChange={e => setTyped(e.target.value)}
-            placeholder="DELETE"
+            value={input}
+            onChange={e => { setInput(e.target.value); setError(""); }}
+            placeholder="delete my account"
             autoFocus
             style={{
-              width: "100%", padding: "9px 12px", borderRadius: 8,
-              border: `1.5px solid ${confirmed ? "#16a34a" : "var(--input-border)"}`,
-              background: "var(--input-bg)", color: "var(--text-primary)",
-              fontSize: 14, outline: "none", transition: "border-color 0.15s",
-              letterSpacing: "0.5px", fontWeight: 600,
+              width: "100%", padding: "10px 12px", borderRadius: 10,
+              border: `1.5px solid ${error ? "#dc2626" : "var(--input-border, #d1d5db)"}`,
+              background: "var(--input-bg, #fff)", color: "var(--text-primary)",
+              fontSize: 14, outline: "none", marginBottom: error ? 6 : 16,
+              fontFamily: "var(--font-body)",
             }}
           />
-        </div>
+          {error && <p style={{ fontSize: 12.5, color: "#dc2626", marginBottom: 12, display: "flex", alignItems: "center", gap: 5 }}><IcoAlert /> {error}</p>}
 
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            onClick={onCancel}
-            style={{ flex: 1, padding: "11px", borderRadius: 10, background: "var(--bg-tertiary)", border: "1.5px solid var(--border-color)", color: "var(--text-secondary)", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
-          >Cancel</button>
-          <button
-            onClick={onConfirm}
-            disabled={!confirmed || loading}
-            style={{
-              flex: 1, padding: "11px", borderRadius: 10,
-              background: confirmed ? "#dc2626" : "var(--bg-tertiary)",
-              border: `1.5px solid ${confirmed ? "#dc2626" : "var(--border-color)"}`,
-              color: confirmed ? "#fff" : "var(--text-muted)",
-              fontSize: 14, fontWeight: 600, cursor: confirmed ? "pointer" : "not-allowed",
-              transition: "all 0.18s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            }}
-          >
-            {loading
-              ? <><div style={{ width: 16, height: 16, border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.75s linear infinite" }} /> Deleting…</>
-              : "Delete Account"
-            }
-          </button>
-        </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button type="button" onClick={onCancel} disabled={loading} style={{
+              flex: 1, padding: "11px 0", borderRadius: 10, border: "1.5px solid var(--border-color)",
+              background: "transparent", color: "var(--text-secondary)", fontSize: 14, fontWeight: 500,
+              cursor: "pointer", fontFamily: "var(--font-body)",
+            }}>Cancel</button>
+            <button type="submit" disabled={loading || !valid} style={{
+              flex: 1, padding: "11px 0", borderRadius: 10, border: "none",
+              background: loading || !valid ? "#fca5a5" : "#dc2626",
+              color: "#fff", fontSize: 14, fontWeight: 600,
+              cursor: loading || !valid ? "not-allowed" : "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              fontFamily: "var(--font-body)", transition: "background 0.15s",
+            }}>
+              {loading ? <div style={{ width: 16, height: 16, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> : <><IcoTrash /> Delete</>}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
 }
 
-/* ── Profile Page ────────────────────────────────────────────── */
+/* ── InfoRow ─────────────────────────────────────────────────── */
+function InfoRow({ icon: Icon, label, value, border = true }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 14,
+      padding: "14px 0",
+      borderBottom: border ? "1px solid var(--border-color, #e9ecef)" : "none",
+    }}>
+      <div style={{
+        width: 36, height: 36, borderRadius: 9, flexShrink: 0,
+        background: "var(--bg-tertiary, #f0f4f1)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: "var(--text-muted)",
+      }}><Icon /></div>
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-faint, #9ca3af)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>{label}</div>
+        <div style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 500 }}>{value || "—"}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Profile page ────────────────────────────────────────────── */
 export default function Profile() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const meta = ROLE_META[user?.role] || ROLE_META.student;
 
-  const [notifyEmail, setNotifyEmail]   = useState(false);
-  const [notifySystem, setNotifySystem] = useState(true);
-  const [savingNotif, setSavingNotif]   = useState(false);
-  const [notifSaved, setNotifSaved]     = useState(false);
+  const [notifEnabled, setNotifEnabled] = useState(false);
+  const [notifLoading, setNotifLoading] = useState(true);
+  const [notifSaved, setNotifSaved]   = useState(false);
+  const [showDelete, setShowDelete]   = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [pageError, setPageError] = useState("");
 
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deletingAccount, setDeletingAccount] = useState(false);
+  const rc = ROLE_CFG[user?.role] || ROLE_CFG.student;
 
-  const [toast, setToast] = useState(null);
-
-  const showToast = (msg, type = "success") => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3200);
-  };
-
-  // Load notification preferences
+  /* Fetch notification preference on mount */
   useEffect(() => {
-    api.get("/api/user/notifications")
-      .then(r => {
-        setNotifyEmail(r.data.email ?? false);
-        setNotifySystem(r.data.system ?? true);
-      })
-      .catch(() => {}); // Fail silently, use defaults
+    api.get("/auth/me")
+      .then(r => setNotifEnabled(r.data.user?.notifications_enabled ?? false))
+      .catch(() => {})
+      .finally(() => setNotifLoading(false));
   }, []);
 
-  const handleSaveNotifications = async () => {
-    setSavingNotif(true);
+  /* Save notification preference */
+  const handleNotifChange = async (val) => {
+    setNotifLoading(true);
     try {
-      await api.patch("/api/user/notifications", { email: notifyEmail, system: notifySystem });
+      await api.patch("/notifications/settings", { notifications_enabled: val });
+      setNotifEnabled(val);
       setNotifSaved(true);
-      showToast("Notification preferences saved!");
-      setTimeout(() => setNotifSaved(false), 2500);
+      setTimeout(() => setNotifSaved(false), 2000);
     } catch {
-      showToast("Failed to save preferences.", "error");
+      setPageError("Failed to save notification preference. Try again.");
     } finally {
-      setSavingNotif(false);
+      setNotifLoading(false);
     }
   };
 
-  const handleDeleteAccount = async () => {
-    setDeletingAccount(true);
+  /* Delete account */
+  const handleDelete = async () => {
+    setDeleteLoading(true);
     try {
-      await api.delete("/api/user/account");
+      await api.delete("/auth/account");
       await logout();
       navigate("/", { replace: true });
     } catch {
-      showToast("Failed to delete account. Try again.", "error");
-      setDeletingAccount(false);
-      setShowDeleteModal(false);
+      setDeleteLoading(false);
+      setShowDelete(false);
+      setPageError("Failed to delete account. Please try again.");
     }
   };
 
-  const handleLogout = async () => { await logout(); navigate("/", { replace: true }); };
-
-  const ROLE_ACTIONS = {
-    student: [
-      { icon: "📚", label: "Enrolled Classes", sub: "View active courses", path: "/enrolled-classes" },
-      { icon: "⏳", label: "Pending Activities", sub: "Unsubmitted work", path: "/pending-activities" },
-      { icon: "📢", label: "Announcements", sub: "Class announcements", path: "/announcements" },
-    ],
-    professor: [
-      { icon: "📢", label: "Post Announcement", sub: "Notify your students", path: "/professor" },
-      { icon: "📚", label: "My Classes", sub: "Courses you teach", path: "/professor" },
-    ],
-    parent: [
-      { icon: "👨‍👩‍👧", label: "Student Monitor", sub: "Track your child", path: "/parent" },
-    ],
-  };
-  const quickActions = ROLE_ACTIONS[user?.role] || ROLE_ACTIONS.student;
-
   return (
-    <div style={{ maxWidth: 600, animation: "fadeIn 0.35s ease" }}>
-
-      {/* Toast */}
-      {toast && (
-        <div style={{
-          position: "fixed", top: 20, right: 20, zIndex: 2000,
-          background: toast.type === "error" ? "#dc2626" : "#16a34a",
-          color: "#fff", borderRadius: 12, padding: "12px 18px",
-          fontSize: 14, fontWeight: 500, boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
-          animation: "fadeUp 0.2s ease", display: "flex", alignItems: "center", gap: 8,
-        }}>
-          <span>{toast.type === "error" ? "⚠️" : "✅"}</span>
-          {toast.msg}
+    <div style={{ animation: "fadeIn 0.35s ease", maxWidth: 580 }}>
+      {pageError && (
+        <div style={{ display: "flex", alignItems: "center", gap: 7, background: "#fee2e2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", color: "#b91c1c", fontSize: 13.5, marginBottom: 16 }}>
+          <IcoAlert /> {pageError}
+          <button onClick={() => setPageError("")} style={{ marginLeft: "auto", background: "none", border: "none", color: "#b91c1c", cursor: "pointer", fontSize: 14 }}>✕</button>
         </div>
       )}
 
-      {/* ── Hero card ─────────────────────────────────────── */}
-      <div style={{ background: "var(--card-bg)", borderRadius: 18, border: "1px solid var(--card-border)", overflow: "hidden", marginBottom: 16, boxShadow: "var(--shadow-md)" }}>
-        <div style={{ height: 96, background: "linear-gradient(135deg,#0f2010,#1e4d1e)", position: "relative", overflow: "hidden" }}>
-          <div style={{ position: "absolute", inset: 0, opacity: 0.06, backgroundImage: "radial-gradient(circle,#fff 1.5px,transparent 1.5px)", backgroundSize: "26px 26px" }} />
+      {/* ── Cover card ── */}
+      <div style={{ background: "var(--card-bg, #fff)", borderRadius: 18, border: "1px solid var(--card-border, #e9ecef)", overflow: "hidden", boxShadow: "var(--shadow-md)", marginBottom: 16 }}>
+        {/* Banner */}
+        <div style={{ height: 96, background: "linear-gradient(135deg, #0f1f0f 0%, #1a3a1a 100%)", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0, opacity: 0.06, backgroundImage: "radial-gradient(circle, #fff 1px, transparent 1px)", backgroundSize: "22px 22px" }} />
         </div>
-        <div style={{ padding: "0 24px 24px" }}>
-          <div style={{ marginTop: -42, marginBottom: 14, display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+
+        <div style={{ padding: "0 24px 24px", position: "relative" }}>
+          {/* ── Avatar — FIXED: uses relative positioning offset from banner ── */}
+          <div style={{
+            position: "relative",    /* no absolute — avoids z-index stacking bug */
+            marginTop: -44,          /* pull up over the banner */
+            marginBottom: 14,
+            width: 80,
+            zIndex: 1,               /* sit above banner but below dropdown */
+            display: "inline-block",
+          }}>
             {user?.picture
-              ? <img src={user.picture} alt={user.name} style={{ width: 78, height: 78, borderRadius: "50%", border: "4px solid var(--card-bg)", boxShadow: "0 4px 14px rgba(0,0,0,0.15)", objectFit: "cover" }} />
-              : <div style={{ width: 78, height: 78, borderRadius: "50%", background: `linear-gradient(135deg,${meta.color},#166534)`, border: "4px solid var(--card-bg)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 26, fontWeight: 700 }}>
+              ? (
+                <img
+                  src={user.picture}
+                  alt={user.name}
+                  style={{
+                    width: 80, height: 80, borderRadius: "50%", display: "block",
+                    border: "4px solid var(--card-bg, #fff)",
+                    boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
+                    objectFit: "cover",
+                  }}
+                />
+              )
+              : (
+                <div style={{
+                  width: 80, height: 80, borderRadius: "50%", display: "flex",
+                  alignItems: "center", justifyContent: "center",
+                  background: `linear-gradient(135deg, ${rc.color}cc, ${rc.color})`,
+                  border: "4px solid var(--card-bg, #fff)",
+                  boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
+                  color: "#fff", fontSize: 26, fontWeight: 700,
+                }}>
                   {user ? initials(user.name) : "?"}
                 </div>
+              )
             }
-            <span style={{ background: meta.bg, color: meta.color, border: `1px solid ${meta.border}`, fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 99, marginBottom: 4 }}>
-              {meta.label}
-            </span>
           </div>
-          <h2 style={{ fontSize: 21, fontWeight: 700, color: "var(--text-primary)", marginBottom: 3 }}>{user?.name}</h2>
-          <p style={{ fontSize: 13.5, color: "var(--text-muted)" }}>{user?.email} · {meta.desc}</p>
+
+          {/* Role badge — top-right of card body */}
+          <div style={{ position: "absolute", top: -44 + 96 + 14, right: 24 }}>
+            <span style={{
+              background: rc.bg, color: rc.color,
+              border: `1px solid ${rc.border}`,
+              fontSize: 11.5, fontWeight: 700, padding: "3px 10px", borderRadius: 99,
+              letterSpacing: "0.3px",
+            }}>{rc.label}</span>
+          </div>
+
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>{user?.name}</h2>
+          <p style={{ fontSize: 13.5, color: "var(--text-muted)" }}>{user?.email}</p>
         </div>
       </div>
 
-      {/* ── Account Info ──────────────────────────────────── */}
-      <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid var(--card-border)", padding: "18px 22px", marginBottom: 14, boxShadow: "var(--shadow-sm)" }}>
-        <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-muted)", marginBottom: 4 }}>Account</h3>
-        <SettingRow icon="👤" label="Full Name" desc={user?.name} />
-        <SettingRow icon="📧" label="Email Address" desc={user?.email} />
-        <SettingRow icon="🎭" label="Role" desc={meta.label} />
-        <div style={{ paddingTop: 0 }}>
-          <SettingRow icon="🔐" label="Sign-in Method" desc="Google OAuth 2.0" />
+      {/* ── Account info ── */}
+      <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid var(--card-border)", padding: "18px 22px", boxShadow: "var(--shadow-sm)", marginBottom: 14 }}>
+        <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 4 }}>Account</h3>
+        <InfoRow icon={IcoUser}   label="Full Name"      value={user?.name} />
+        <InfoRow icon={IcoMail}   label="Email"          value={user?.email} />
+        <InfoRow icon={IcoBadge}  label="Role"           value={rc.label} />
+        <InfoRow icon={IcoShield} label="Sign-in Method" value="Google OAuth 2.0" border={false} />
+      </div>
+
+      {/* ── Notification preference ── */}
+      <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid var(--card-border)", padding: "18px 22px", boxShadow: "var(--shadow-sm)", marginBottom: 14 }}>
+        <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 16 }}>Notifications</h3>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 9, background: "var(--bg-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", flexShrink: 0 }}><IcoBell /></div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>Email notifications</div>
+              <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Receive deadline reminders and announcements by email</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+            <NotificationToggle enabled={notifEnabled} onChange={handleNotifChange} loading={notifLoading} />
+            {notifSaved && (
+              <span style={{ fontSize: 11, color: "#16a34a", display: "flex", alignItems: "center", gap: 3, animation: "fadeIn 0.2s ease" }}>
+                <IcoCheck /> Saved
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ── Notifications ─────────────────────────────────── */}
-      <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid var(--card-border)", padding: "18px 22px", marginBottom: 14, boxShadow: "var(--shadow-sm)" }}>
-        <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-muted)", marginBottom: 4 }}>Notifications</h3>
+      {/* ── Danger zone ── */}
+      <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid #fecaca", padding: "18px 22px", boxShadow: "var(--shadow-sm)" }}>
+        <h3 style={{ fontSize: 12, fontWeight: 700, color: "#dc2626", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 16 }}>Danger Zone</h3>
 
-        <SettingRow
-          icon="📬"
-          label="Email Notifications"
-          desc="Receive deadline reminders and announcements via email"
-        >
-          <Toggle checked={notifyEmail} onChange={setNotifyEmail} />
-        </SettingRow>
-
-        <SettingRow
-          icon="🔔"
-          label="In-App Notifications"
-          desc="Show notification badges in the dashboard"
-        >
-          <Toggle checked={notifySystem} onChange={setNotifySystem} />
-        </SettingRow>
-
-        <div style={{ paddingTop: 14, display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>Delete account</div>
+            <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Permanently remove your account and all associated data</div>
+          </div>
           <button
-            onClick={handleSaveNotifications}
-            disabled={savingNotif}
+            onClick={() => setShowDelete(true)}
             style={{
-              padding: "9px 20px", borderRadius: 10,
-              background: notifSaved ? "#16a34a" : "var(--green-700)",
-              color: "#fff", fontSize: 13.5, fontWeight: 600, border: "none",
-              cursor: savingNotif ? "not-allowed" : "pointer",
-              display: "flex", alignItems: "center", gap: 7, transition: "all 0.18s",
+              display: "flex", alignItems: "center", gap: 7,
+              padding: "9px 16px", borderRadius: 10,
+              background: "#fee2e2", border: "1px solid #fecaca",
+              color: "#dc2626", fontSize: 13.5, fontWeight: 600,
+              cursor: "pointer", transition: "all 0.15s",
+              flexShrink: 0,
             }}
+            onMouseEnter={e => { e.currentTarget.style.background = "#dc2626"; e.currentTarget.style.color = "#fff"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "#fee2e2"; e.currentTarget.style.color = "#dc2626"; }}
           >
-            {savingNotif
-              ? <><div style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.75s linear infinite" }} /> Saving…</>
-              : notifSaved ? "✓ Saved" : "Save Preferences"
-            }
+            <IcoTrash /> Delete Account
           </button>
         </div>
       </div>
 
-      {/* ── Quick Actions ─────────────────────────────────── */}
-      <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid var(--card-border)", padding: "18px 22px", marginBottom: 14, boxShadow: "var(--shadow-sm)" }}>
-        <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--text-muted)", marginBottom: 12 }}>Quick Actions</h3>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {quickActions.map(item => (
-            <button
-              key={item.label}
-              onClick={() => navigate(item.path)}
-              style={{
-                display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
-                borderRadius: 12, border: "1px solid var(--border-color)",
-                background: "var(--bg-tertiary)", cursor: "pointer", textAlign: "left",
-                transition: "all 0.14s",
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = "var(--green-50)", e.currentTarget.style.borderColor = "var(--green-200)")}
-              onMouseLeave={e => (e.currentTarget.style.background = "var(--bg-tertiary)", e.currentTarget.style.borderColor = "var(--border-color)")}
-            >
-              <span style={{ fontSize: 20 }}>{item.icon}</span>
-              <div>
-                <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-primary)" }}>{item.label}</div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{item.sub}</div>
-              </div>
-              <span style={{ marginLeft: "auto", color: "var(--text-muted)", fontSize: 18 }}>›</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Danger Zone ───────────────────────────────────── */}
-      <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid #fecaca", padding: "18px 22px", marginBottom: 14, boxShadow: "var(--shadow-sm)" }}>
-        <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "#dc2626", marginBottom: 14 }}>Danger Zone</h3>
-
-        {/* Sign out */}
-        <button
-          onClick={handleLogout}
-          style={{
-            width: "100%", display: "flex", alignItems: "center", gap: 12,
-            padding: "12px 14px", borderRadius: 12,
-            border: "1px solid var(--border-color)", background: "var(--bg-tertiary)",
-            cursor: "pointer", marginBottom: 8, textAlign: "left", transition: "all 0.14s",
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = "var(--hover-bg)"}
-          onMouseLeave={e => e.currentTarget.style.background = "var(--bg-tertiary)"}
-        >
-          <span style={{ fontSize: 18 }}>🚪</span>
-          <div>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-primary)" }}>Sign Out</div>
-            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Log out of your BUPulse account</div>
-          </div>
-        </button>
-
-        {/* Delete account */}
-        <button
-          onClick={() => setShowDeleteModal(true)}
-          style={{
-            width: "100%", display: "flex", alignItems: "center", gap: 12,
-            padding: "12px 14px", borderRadius: 12,
-            border: "1.5px solid #fecaca", background: "#fff5f5",
-            cursor: "pointer", textAlign: "left", transition: "all 0.14s",
-          }}
-          onMouseEnter={e => (e.currentTarget.style.background = "#fee2e2", e.currentTarget.style.borderColor = "#f87171")}
-          onMouseLeave={e => (e.currentTarget.style.background = "#fff5f5", e.currentTarget.style.borderColor = "#fecaca")}
-        >
-          <span style={{ fontSize: 18 }}>🗑️</span>
-          <div>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: "#dc2626" }}>Delete Account</div>
-            <div style={{ fontSize: 12, color: "#f87171" }}>Permanently remove your account and all data</div>
-          </div>
-        </button>
-      </div>
-
       {/* Delete modal */}
-      {showDeleteModal && (
+      {showDelete && (
         <DeleteModal
-          onConfirm={handleDeleteAccount}
-          onCancel={() => setShowDeleteModal(false)}
-          loading={deletingAccount}
+          onConfirm={handleDelete}
+          onCancel={() => setShowDelete(false)}
+          loading={deleteLoading}
         />
       )}
 
       <style>{`
-        @keyframes fadeIn  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes fadeUp  { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes spin    { to { transform: rotate(360deg); } }
-        @keyframes scaleIn { from { opacity:0; transform:scale(0.94); } to { opacity:1; transform:scale(1); } }
+        @keyframes scaleIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
       `}</style>
     </div>
   );
