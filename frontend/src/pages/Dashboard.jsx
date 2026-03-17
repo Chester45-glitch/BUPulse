@@ -38,26 +38,56 @@ const StatCard = ({ icon, label, value, sub, color, onClick }) => (
   </div>
 );
 
+const CACHE_KEY = "bupulse_dashboard";
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+const getCache = () => {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    if (Date.now() - ts > CACHE_TTL) return null; // expired
+    return data;
+  } catch { return null; }
+};
+
+const setCache = (data) => {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); } catch {}
+};
+
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState(() => getCache()); // load cache instantly
+  const [loading, setLoading] = useState(!getCache()); // skip skeleton if cached
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    const cached = getCache();
+    if (cached) {
+      // Already showing cached data — fetch fresh in background silently
+      setRefreshing(true);
+      api.get("/classroom/dashboard")
+        .then(r => { setData(r.data); setCache(r.data); })
+        .catch(() => {}) // silently fail — cached data still shows
+        .finally(() => setRefreshing(false));
+      return;
+    }
 
-  api.get("/classroom/dashboard", { signal: controller.signal })
-    .then(r => setData(r.data))
-    .catch(e => {
-      if (e.name !== 'CanceledError') setError("Couldn't load dashboard. Try refreshing.");
-    })
-    .finally(() => { clearTimeout(timeout); setLoading(false); });
+    // No cache — show skeleton and wait
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
 
-  return () => { controller.abort(); clearTimeout(timeout); };
-}, []);
+    api.get("/classroom/dashboard", { signal: controller.signal })
+      .then(r => { setData(r.data); setCache(r.data); })
+      .catch(e => {
+        if (e.name !== "CanceledError") setError("Couldn't load dashboard. Try refreshing.");
+      })
+      .finally(() => { clearTimeout(timeout); setLoading(false); });
+
+    return () => { controller.abort(); clearTimeout(timeout); };
+  }, []);
 
   const now = new Date();
 
@@ -78,6 +108,14 @@ export default function Dashboard() {
 
   return (
     <div style={{ animation: "fadeIn 0.4s ease" }}>
+
+      {/* Subtle refresh indicator */}
+      {refreshing && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, fontSize: 12, color: "var(--text-muted)" }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--green-500)", animation: "pulse-dot 1s ease-in-out infinite" }} />
+          Updating...
+        </div>
+      )}
 
       {/* Hero Banner */}
       <div style={{
