@@ -16,23 +16,75 @@ const getCourses = async (accessToken, refreshToken) => {
   return res.data.courses || [];
 };
 
+// Get courses the user TEACHES (for professor)
+const getTaughtCourses = async (accessToken, refreshToken) => {
+  try {
+    const classroom = createClient(accessToken, refreshToken);
+    const res = await classroom.courses.list({
+      teacherId: "me",
+      courseStates: ["ACTIVE"],
+      pageSize: 20,
+    });
+    return res.data.courses || [];
+  } catch (e) {
+    console.error("getTaughtCourses error:", e.message);
+    return [];
+  }
+};
+
 const getCourseWork = async (courseId, accessToken, refreshToken) => {
   const classroom = createClient(accessToken, refreshToken);
   const res = await classroom.courses.courseWork.list({
-    courseId, courseWorkStates: ["PUBLISHED"], pageSize: 30, orderBy: "dueDate asc",
+    courseId,
+    courseWorkStates: ["PUBLISHED"],
+    pageSize: 30,
+    orderBy: "dueDate asc",
   });
   return res.data.courseWork || [];
 };
 
-const getAnnouncements = async (courseId, accessToken, refreshToken) => {
+const getAnnouncementsForCourse = async (courseId, accessToken, refreshToken) => {
   const classroom = createClient(accessToken, refreshToken);
   const res = await classroom.courses.announcements.list({
-    courseId, announcementStates: ["PUBLISHED"], pageSize: 10, orderBy: "updateTime desc",
+    courseId,
+    announcementStates: ["PUBLISHED"],
+    pageSize: 10,
+    orderBy: "updateTime desc",
   });
   return res.data.announcements || [];
 };
 
-// Check if a specific assignment is submitted
+// For students: get announcements from enrolled courses
+const getAllAnnouncements = async (accessToken, refreshToken) => {
+  const courses = await getCourses(accessToken, refreshToken);
+  return getAllAnnouncementsForCourses(courses, accessToken, refreshToken);
+};
+
+// Shared: get announcements from a given list of courses
+const getAllAnnouncementsForCourses = async (courses, accessToken, refreshToken) => {
+  const results = await Promise.all(
+    courses.map(async (course) => {
+      try {
+        const anns = await getAnnouncementsForCourse(course.id, accessToken, refreshToken);
+        return anns.map(a => ({
+          courseId: course.id,
+          courseName: course.name,
+          id: a.id,
+          text: a.text,
+          creationTime: a.creationTime,
+          updateTime: a.updateTime,
+          link: a.alternateLink,
+        }));
+      } catch (e) {
+        console.error(`Announcements error for ${course.id}:`, e.message);
+        return [];
+      }
+    })
+  );
+  return results.flat().sort((a, b) => new Date(b.updateTime) - new Date(a.updateTime));
+};
+
+// Check submission status for a student
 const getSubmissionStatus = async (courseId, courseWorkId, accessToken, refreshToken) => {
   try {
     const classroom = createClient(accessToken, refreshToken);
@@ -44,11 +96,10 @@ const getSubmissionStatus = async (courseId, courseWorkId, accessToken, refreshT
     const submissions = res.data.studentSubmissions || [];
     if (submissions.length === 0) return "NOT_SUBMITTED";
     const state = submissions[0].state;
-    // TURNED_IN or RETURNED means submitted/graded
     if (state === "TURNED_IN" || state === "RETURNED") return "SUBMITTED";
     return "NOT_SUBMITTED";
   } catch (e) {
-    console.error(`Error checking submission for ${courseWorkId}:`, e.message);
+    console.error(`Submission check error for ${courseWorkId}:`, e.message);
     return "UNKNOWN";
   }
 };
@@ -56,24 +107,20 @@ const getSubmissionStatus = async (courseId, courseWorkId, accessToken, refreshT
 const getAllDeadlines = async (accessToken, refreshToken) => {
   const courses = await getCourses(accessToken, refreshToken);
 
-  // Fetch all coursework in parallel
   const results = await Promise.all(
     courses.map(async (course) => {
       try {
         const work = await getCourseWork(course.id, accessToken, refreshToken);
         const workWithDates = work.filter(w => w.dueDate);
 
-        // Check submission status for all work in this course in parallel
         const workWithStatus = await Promise.all(
           workWithDates.map(async (w) => {
-            const submissionStatus = await getSubmissionStatus(
-              course.id, w.id, accessToken, refreshToken
-            );
+            const submissionStatus = await getSubmissionStatus(course.id, w.id, accessToken, refreshToken);
             const d = w.dueDate;
             const dueDate = new Date(
-              `${d.year}-${String(d.month).padStart(2,"0")}-${String(d.day).padStart(2,"0")}T${
+              `${d.year}-${String(d.month).padStart(2, "0")}-${String(d.day).padStart(2, "0")}T${
                 w.dueTime
-                  ? `${String(w.dueTime.hours||0).padStart(2,"0")}:${String(w.dueTime.minutes||0).padStart(2,"0")}:00`
+                  ? `${String(w.dueTime.hours || 0).padStart(2, "0")}:${String(w.dueTime.minutes || 0).padStart(2, "0")}:00`
                   : "23:59:00"
               }`
             );
@@ -85,16 +132,16 @@ const getAllDeadlines = async (accessToken, refreshToken) => {
               description: w.description || "",
               dueDate,
               link: w.alternateLink,
-              submissionStatus, // "SUBMITTED", "NOT_SUBMITTED", "UNKNOWN"
+              submissionStatus,
               workType: w.workType || "ASSIGNMENT",
             };
           })
         );
 
-        // Only return NOT submitted items
+        // Only return unsubmitted items
         return workWithStatus.filter(w => w.submissionStatus !== "SUBMITTED");
       } catch (e) {
-        console.error(`Error fetching coursework for ${course.id}:`, e.message);
+        console.error(`Coursework error for ${course.id}:`, e.message);
         return [];
       }
     })
@@ -103,52 +150,17 @@ const getAllDeadlines = async (accessToken, refreshToken) => {
   return results.flat().sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
 };
 
-const getAllAnnouncements = async (accessToken, refreshToken) => {
-  const courses = await getCourses(accessToken, refreshToken);
-
-  const results = await Promise.all(
-    courses.map(async (course) => {
-      try {
-        const anns = await getAnnouncements(course.id, accessToken, refreshToken);
-        return anns.map(a => ({
-          courseId: course.id,
-          courseName: course.name,
-          id: a.id,
-          text: a.text,
-          creationTime: a.creationTime,
-          updateTime: a.updateTime,
-          link: a.alternateLink,
-        }));
-      } catch (e) {
-        console.error(`Error fetching announcements for ${course.id}:`, e.message);
-        return [];
-      }
-    })
-  );
-
-  return results.flat().sort((a, b) => new Date(b.updateTime) - new Date(a.updateTime));
-};
-
-// For professor: get all students in a course
 const getCourseStudents = async (courseId, accessToken, refreshToken) => {
   try {
     const classroom = createClient(accessToken, refreshToken);
     const res = await classroom.courses.students.list({ courseId, pageSize: 50 });
     return res.data.students || [];
   } catch (e) {
-    console.error(`Error fetching students for ${courseId}:`, e.message);
+    console.error(`Students error for ${courseId}:`, e.message);
     return [];
   }
 };
 
-// For professor: get courses they teach
-const getTaughtCourses = async (accessToken, refreshToken) => {
-  const classroom = createClient(accessToken, refreshToken);
-  const res = await classroom.courses.list({ teacherId: "me", courseStates: ["ACTIVE"], pageSize: 20 });
-  return res.data.courses || [];
-};
-
-// For professor: create announcement
 const createAnnouncement = async (courseId, text, accessToken, refreshToken) => {
   const classroom = createClient(accessToken, refreshToken);
   const res = await classroom.courses.announcements.create({
@@ -160,11 +172,11 @@ const createAnnouncement = async (courseId, text, accessToken, refreshToken) => 
 
 module.exports = {
   getCourses,
+  getTaughtCourses,
   getCourseWork,
-  getAnnouncements,
   getAllDeadlines,
   getAllAnnouncements,
+  getAllAnnouncementsForCourses,
   getCourseStudents,
-  getTaughtCourses,
   createAnnouncement,
 };
