@@ -46,11 +46,18 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    api.get("/classroom/dashboard")
-      .then(r => setData(r.data))
-      .catch(e => setError(e.response?.data?.error || "Failed to load"))
-      .finally(() => setLoading(false));
-  }, []);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+  api.get("/classroom/dashboard", { signal: controller.signal })
+    .then(r => setData(r.data))
+    .catch(e => {
+      if (e.name !== 'CanceledError') setError("Couldn't load dashboard. Try refreshing.");
+    })
+    .finally(() => { clearTimeout(timeout); setLoading(false); });
+
+  return () => { controller.abort(); clearTimeout(timeout); };
+}, []);
 
   const now = new Date();
 
