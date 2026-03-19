@@ -11,10 +11,15 @@ const createGmailClient = (accessToken, refreshToken) => {
   return google.gmail({ version: "v1", auth });
 };
 
+// RFC 2047 encodes subjects containing non-ASCII chars (emojis, accented chars).
+// Without this, Gmail renders emojis as garbled text like "ÃcÂšÃ Ã¯Â¸Â".
+const encodeSubject = (subject) =>
+  `=?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
+
 const encodeEmail = (to, subject, htmlBody) => {
   const email = [
     `To: ${to}`,
-    `Subject: ${subject}`,
+    `Subject: ${encodeSubject(subject)}`,
     `MIME-Version: 1.0`,
     `Content-Type: text/html; charset=UTF-8`,
     ``,
