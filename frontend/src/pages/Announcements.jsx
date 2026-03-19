@@ -225,6 +225,7 @@ function CourseDropdown({ courses, selected, onChange }) {
 export default function Announcements({ role }) {
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
   const [tagFilter, setTagFilter] = useState("ALL");
   const [courseFilter, setCourseFilter] = useState("ALL");
@@ -232,13 +233,16 @@ export default function Announcements({ role }) {
 
   const endpoint = role === "professor" ? "/professor/announcements" : "/classroom/announcements";
 
-  useEffect(() => {
-    setLoading(true);
-    api.get(endpoint)
+  const fetchAnnouncements = (force = false) => {
+    const url = force ? `${endpoint}?refresh=true` : endpoint;
+    if (force) setRefreshing(true); else setLoading(true);
+    api.get(url)
       .then(r => setAnnouncements(r.data.announcements || []))
       .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [endpoint]);
+      .finally(() => { setLoading(false); setRefreshing(false); });
+  };
+
+  useEffect(() => { fetchAnnouncements(); }, [endpoint]);
 
   const courses = [...new Set(announcements.map(a => a.courseName).filter(Boolean))].sort();
 
@@ -260,11 +264,31 @@ export default function Announcements({ role }) {
 
   return (
     <div style={{ animation: "fadeIn 0.35s ease", maxWidth: 780 }}>
-      {/* Stats */}
-      <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
-        <strong style={{ color: "var(--text-primary)" }}>{announcements.length}</strong> announcement{announcements.length !== 1 ? "s" : ""} across{" "}
-        <strong style={{ color: "var(--text-primary)" }}>{courses.length}</strong> course{courses.length !== 1 ? "s" : ""}
-      </p>
+      {/* Stats + Refresh */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
+          <strong style={{ color: "var(--text-primary)" }}>{announcements.length}</strong> announcement{announcements.length !== 1 ? "s" : ""} across{" "}
+          <strong style={{ color: "var(--text-primary)" }}>{courses.length}</strong> course{courses.length !== 1 ? "s" : ""}
+        </p>
+        <button
+          onClick={() => fetchAnnouncements(true)}
+          disabled={refreshing}
+          style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "6px 13px", borderRadius: 9, fontSize: 12.5, fontWeight: 500,
+            border: "1.5px solid var(--card-border)", background: "var(--card-bg)",
+            color: refreshing ? "var(--text-muted)" : "var(--green-700)",
+            cursor: refreshing ? "not-allowed" : "pointer", transition: "all 0.14s",
+          }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+            style={{ animation: refreshing ? "spin 0.8s linear infinite" : "none" }}>
+            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
 
       {/* Toolbar */}
       <div style={{
