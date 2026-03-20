@@ -96,13 +96,13 @@ function MyClassesTab({ courses, loading, onRefresh }) {
 }
 
 // ── Main Dashboard ────────────────────────────────────────────────
-export default function ProfessorDashboard() {
+export default function ProfessorDashboard({ defaultTab } = {}) {
   const { user } = useAuth();
   const [courses, setCourses] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [coursesError, setCoursesError] = useState("");
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState(defaultTab || "overview");
 
   const loadData = async () => {
     setLoading(true);
