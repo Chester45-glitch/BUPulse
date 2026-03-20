@@ -11,80 +11,65 @@ const createFormsClient = (accessToken, refreshToken) => {
   return google.forms({ version: "v1", auth });
 };
 
-// ── Question type builders ────────────────────────────────────────
-const buildQuestion = (q, index) => {
-  const base = {
-    title: q.question,
-    required: true,
-  };
+// ── Build the question body (no title here — title goes on item) ──
+const buildQuestionBody = (q) => {
+  const type = (q.type || "SHORT_ANSWER").toUpperCase().replace(" ", "_");
 
-  if (q.type === "RADIO" || q.type === "multiple_choice") {
+  if (type === "RADIO" || type === "MULTIPLE_CHOICE") {
     return {
-      ...base,
+      required: true,
       choiceQuestion: {
         type: "RADIO",
-        options: (q.options || []).map((opt) => ({ value: opt })),
+        options: (q.options || []).map((opt) => ({ value: String(opt) })),
         shuffle: false,
       },
     };
   }
 
-  if (q.type === "CHECKBOX") {
+  if (type === "CHECKBOX") {
     return {
-      ...base,
+      required: true,
       choiceQuestion: {
         type: "CHECKBOX",
-        options: (q.options || []).map((opt) => ({ value: opt })),
+        options: (q.options || []).map((opt) => ({ value: String(opt) })),
+        shuffle: false,
       },
     };
   }
 
-  if (q.type === "SHORT_ANSWER" || q.type === "short_answer") {
-    return {
-      ...base,
-      textQuestion: { paragraph: false },
-    };
-  }
-
-  if (q.type === "PARAGRAPH") {
-    return {
-      ...base,
-      textQuestion: { paragraph: true },
-    };
-  }
-
-  // Default: short answer
-  return { ...base, textQuestion: { paragraph: false } };
+  // SHORT_ANSWER / PARAGRAPH / default
+  return {
+    required: true,
+    textQuestion: { paragraph: type === "PARAGRAPH" },
+  };
 };
 
-// ── Create a Google Form ─────────────────────────────────────────
-// questions: [{ question, type, options?, correct? }]
-// Returns: { formId, formUrl, editUrl }
-const createForm = async (
-  title,
-  description,
-  questions = [],
-  accessToken,
-  refreshToken
-) => {
+// ── Create a Google Form with questions ───────────────────────────
+// questions: [{ question, type, options?, correct?, points? }]
+// Returns:   { formId, formUrl, editUrl, title }
+const createForm = async (title, description, questions = [], accessToken, refreshToken) => {
   const forms = createFormsClient(accessToken, refreshToken);
 
-  // Step 1: Create the blank form
+  // ── Step 1: Create the blank form ────────────────────────────
   const createRes = await forms.forms.create({
     requestBody: {
-      info: {
-        title,
-        documentTitle: title,
-      },
+      info: { title, documentTitle: title },
     },
   });
-
   const formId = createRes.data.formId;
 
-  // Step 2: Build batch update requests
-  const requests = [];
+  // ── Step 2: Mark as quiz + add all items in one batchUpdate ──
+  const requests = [
+    // Always set quiz mode first
+    {
+      updateSettings: {
+        settings: { quizSettings: { isQuiz: true } },
+        updateMask: "quizSettings",
+      },
+    },
+  ];
 
-  // Add description as a text item if provided
+  // Optional description text item
   if (description) {
     requests.push({
       createItem: {
@@ -98,14 +83,14 @@ const createForm = async (
     });
   }
 
-  // Add each question
+  // Questions — title goes on item, question body has NO title field
   questions.forEach((q, i) => {
     requests.push({
       createItem: {
         item: {
-          title: q.question,
+          title: q.question,          // ← title on item, NOT inside question
           questionItem: {
-            question: buildQuestion(q, i),
+            question: buildQuestionBody(q),   // ← no title here
           },
         },
         location: { index: description ? i + 1 : i },
@@ -113,70 +98,73 @@ const createForm = async (
     });
   });
 
-  // Step 3: Set as quiz and add all items
-  requests.unshift({
-    updateSettings: {
-      settings: {
-        quizSettings: { isQuiz: true },
-      },
-      updateMask: "quizSettings",
-    },
+  await forms.forms.batchUpdate({
+    formId,
+    requestBody: { requests },
   });
 
-  if (requests.length > 0) {
-    await forms.forms.batchUpdate({
-      formId,
-      requestBody: { requests },
+  // ── Step 3: Set answer keys (fetch item IDs first) ────────────
+  const radioQuestions = questions
+    .map((q, i) => ({ q, i }))
+    .filter(({ q }) => {
+      const type = (q.type || "").toUpperCase();
+      return (type === "RADIO" || type === "MULTIPLE_CHOICE") &&
+        q.correct !== undefined &&
+        q.options?.[q.correct];
     });
-  }
 
-  // Step 4: Set answer keys for multiple choice questions
-  const answerRequests = [];
-  questions.forEach((q, i) => {
-    const itemIndex = description ? i + 1 : i;
-    if (
-      (q.type === "RADIO" || q.type === "multiple_choice") &&
-      q.correct !== undefined &&
-      q.options?.[q.correct]
-    ) {
-      answerRequests.push({
-        updateItem: {
-          item: {
-            questionItem: {
-              question: {
-                grading: {
-                  pointValue: q.points || 1,
-                  correctAnswers: {
-                    answers: [{ value: q.options[q.correct] }],
+  if (radioQuestions.length > 0) {
+    try {
+      // Fetch the form to get real item IDs
+      const formData = await forms.forms.get({ formId });
+      const items = formData.data.items || [];
+
+      const gradeRequests = radioQuestions
+        .map(({ q, i }) => {
+          const itemOffset = description ? i + 1 : i;
+          const item = items[itemOffset];
+          if (!item?.itemId) return null;
+          return {
+            updateItem: {
+              item: {
+                itemId: item.itemId,
+                questionItem: {
+                  question: {
+                    questionId: item.questionItem?.question?.questionId,
+                    grading: {
+                      pointValue: q.points || 1,
+                      correctAnswers: {
+                        answers: [{ value: String(q.options[q.correct]) }],
+                      },
+                    },
                   },
                 },
               },
+              updateMask: "questionItem.question.grading",
             },
-          },
-          location: { index: itemIndex },
-          updateMask: "questionItem.question.grading",
-        },
-      });
-    }
-  });
+          };
+        })
+        .filter(Boolean);
 
-  if (answerRequests.length > 0) {
-    await forms.forms.batchUpdate({
-      formId,
-      requestBody: { requests: answerRequests },
-    }).catch((e) => {
-      // Grading update can fail if form structure changes — non-fatal
-      console.warn("Answer key update warning:", e.message);
-    });
+      if (gradeRequests.length > 0) {
+        await forms.forms.batchUpdate({
+          formId,
+          requestBody: { requests: gradeRequests },
+        });
+      }
+    } catch (e) {
+      // Non-fatal — quiz still works, just without auto-grading
+      console.warn("Answer key warning:", e.message);
+    }
   }
 
-  // Fetch final form to get URLs
+  // ── Step 4: Return URLs ───────────────────────────────────────
   const finalForm = await forms.forms.get({ formId });
 
   return {
     formId,
-    formUrl:  finalForm.data.responderUri,
-    editUrl:  `https://docs.google.com/forms/d/${formId}/edit`,
+    formUrl: finalForm.data.responderUri,
+    editUrl: `https://docs.google.com/forms/d/${formId}/edit`,
     title,
   };
 };
