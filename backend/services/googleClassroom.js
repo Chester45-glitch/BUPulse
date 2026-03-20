@@ -305,11 +305,27 @@ const getCourseStudents = async (courseId, accessToken, refreshToken) => {
 };
 
 // ── Create announcement in a course ────────────────────────────
-const createAnnouncement = async (courseId, text, accessToken, refreshToken) => {
+// ── Create announcement with optional Drive file attachments ──────
+// driveFiles: [{ driveFileId, fileName }]
+const createAnnouncement = async (courseId, text, accessToken, refreshToken, driveFiles = []) => {
   const classroom = createClient(accessToken, refreshToken);
+
+  const materials = driveFiles
+    .filter((f) => f.driveFileId)
+    .map((f) => ({
+      driveFile: {
+        driveFile: { id: f.driveFileId, title: f.fileName || "Attachment" },
+        shareMode: "VIEW",
+      },
+    }));
+
   const res = await classroom.courses.announcements.create({
     courseId,
-    requestBody: { text, state: "PUBLISHED" },
+    requestBody: {
+      text,
+      state: "PUBLISHED",
+      materials: materials.length > 0 ? materials : undefined,
+    },
   });
   return res.data;
 };
