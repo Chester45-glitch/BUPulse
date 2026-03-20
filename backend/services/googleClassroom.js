@@ -400,21 +400,39 @@ const createQuizAssignment = async (courseId, options, accessToken, refreshToken
   const classroom = createClient(accessToken, refreshToken);
   const { title, description, dueDate, dueTime, points = 100, formId, formUrl } = options;
 
-  const res = await classroom.courses.courseWork.create({
-    courseId,
-    requestBody: {
-      title,
-      description: description || "",
-      workType: "ASSIGNMENT",
-      state: "PUBLISHED",
-      maxPoints: points,
-      materials: formId ? [{
-        form: { formUrl, title },
-      }] : undefined,
-      ...parseDue(dueDate, dueTime),
-    },
-  });
-  return res.data;
+  // Attach the form as a Drive file — this is the most reliable method.
+  // Forms ARE Drive files (formId === Drive file ID), and driveFile attachment
+  // always works whereas the `form` material type can silently fail.
+  const materials = formId
+    ? [{
+        driveFile: {
+          driveFile: { id: formId, title },
+          shareMode: "VIEW",
+        },
+      }]
+    : undefined;
+
+  try {
+    const res = await classroom.courses.courseWork.create({
+      courseId,
+      requestBody: {
+        title,
+        description: description
+          ? `${description}\n\nQuiz link: ${formUrl}`
+          : `Quiz link: ${formUrl}`,
+        workType: "ASSIGNMENT",
+        state: "PUBLISHED",
+        maxPoints: points,
+        materials,
+        ...parseDue(dueDate, dueTime),
+      },
+    });
+    return res.data;
+  } catch (err) {
+    // Surface the actual API error message so callers can report it
+    const msg = err.response?.data?.error?.message || err.message;
+    throw new Error(`Classroom API error (courseId ${courseId}): ${msg}`);
+  }
 };
 
 module.exports = {
