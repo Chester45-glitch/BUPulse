@@ -151,7 +151,8 @@ router.post("/announcements", authenticateToken, professorOnly, async (req, res)
           drive_file_url: f.driveFileUrl,
         }))
       );
-      await supabase.from("announcement_attachments").insert(rows).catch(console.error);
+      const { error: attachErr } = await supabase.from("announcement_attachments").insert(rows);
+      if (attachErr) console.error("Attachment save error:", attachErr.message);
     }
 
     const posted = succeeded.length;
