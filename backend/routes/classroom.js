@@ -1,14 +1,18 @@
 const express = require("express");
 const supabase = require("../db/supabase");
 const { authenticateToken } = require("../middleware/auth");
-const { getCourses, getAllDeadlines, getAllAnnouncements } = require("../services/googleClassroom");
+const {
+  getCourses,
+  getAllDeadlines,
+  getAllAnnouncements,
+  getUnifiedStream,
+} = require("../services/googleClassroom");
+
 const router = express.Router();
 
-// ── In-memory cache ─────────────────────────────────────────────
-// Caches Google Classroom responses per user for 3 minutes so
-// page loads are instant and we don't hammer the Classroom API.
+// ── In-memory cache (per user, 3-minute TTL) ────────────────────
 const cache = new Map();
-const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+const CACHE_TTL = 3 * 60 * 1000;
 
 const getCache = (key) => {
   const entry = cache.get(key);
@@ -16,19 +20,26 @@ const getCache = (key) => {
   if (Date.now() - entry.ts > CACHE_TTL) { cache.delete(key); return null; }
   return entry.data;
 };
+
 const setCache = (key, data) => cache.set(key, { data, ts: Date.now() });
+
 const clearUserCache = (userId) => {
   for (const key of cache.keys()) {
     if (key.startsWith(`${userId}:`)) cache.delete(key);
   }
 };
-// ────────────────────────────────────────────────────────────────
 
+// ── Token helper ────────────────────────────────────────────────
 const getUserTokens = async (userId) => {
-  const { data } = await supabase.from("users").select("access_token, refresh_token").eq("id", userId).single();
+  const { data } = await supabase
+    .from("users")
+    .select("access_token, refresh_token")
+    .eq("id", userId)
+    .single();
   return data;
 };
 
+// GET /api/classroom/courses
 router.get("/courses", authenticateToken, async (req, res) => {
   try {
     const cacheKey = `${req.user.id}:courses`;
@@ -44,6 +55,7 @@ router.get("/courses", authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/classroom/deadlines
 router.get("/deadlines", authenticateToken, async (req, res) => {
   try {
     const cacheKey = `${req.user.id}:deadlines`;
@@ -59,6 +71,7 @@ router.get("/deadlines", authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/classroom/announcements (legacy – still used by dashboard)
 router.get("/announcements", authenticateToken, async (req, res) => {
   try {
     const forceRefresh = req.query.refresh === "true";
@@ -78,6 +91,28 @@ router.get("/announcements", authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/classroom/stream — unified feed (announcements + materials + quizzes)
+router.get("/stream", authenticateToken, async (req, res) => {
+  try {
+    const forceRefresh = req.query.refresh === "true";
+    const cacheKey = `${req.user.id}:stream`;
+
+    if (!forceRefresh) {
+      const cached = getCache(cacheKey);
+      if (cached) return res.json({ items: cached, total: cached.length, cached: true });
+    }
+
+    const tokens = await getUserTokens(req.user.id);
+    const items = await getUnifiedStream(tokens.access_token, tokens.refresh_token);
+    setCache(cacheKey, items);
+    res.json({ items, total: items.length });
+  } catch (err) {
+    console.error("Stream error:", err);
+    res.status(500).json({ error: "Failed to fetch stream" });
+  }
+});
+
+// GET /api/classroom/dashboard
 router.get("/dashboard", authenticateToken, async (req, res) => {
   try {
     const forceRefresh = req.query.refresh === "true";
@@ -95,7 +130,7 @@ router.get("/dashboard", authenticateToken, async (req, res) => {
       getCourses(tokens.access_token, tokens.refresh_token),
     ]);
 
-    // Also prime individual caches so other pages are fast too
+    // Prime individual caches so other pages are instant
     setCache(`${req.user.id}:deadlines`, deadlines);
     setCache(`${req.user.id}:announcements`, announcements);
     setCache(`${req.user.id}:courses`, courses);
@@ -103,17 +138,21 @@ router.get("/dashboard", authenticateToken, async (req, res) => {
     const now = new Date();
     const in7Days = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
     const result = {
       stats: {
-        newAnnouncements: announcements.filter(a => new Date(a.updateTime) >= twoDaysAgo).length,
-        upcomingDeadlines: deadlines.filter(d => new Date(d.dueDate) >= now && new Date(d.dueDate) <= in7Days).length,
-        urgentAlerts: deadlines.filter(d => new Date(d.dueDate) < now).length,
+        newAnnouncements: announcements.filter((a) => new Date(a.updateTime) >= twoDaysAgo).length,
+        upcomingDeadlines: deadlines.filter(
+          (d) => new Date(d.dueDate) >= now && new Date(d.dueDate) <= in7Days
+        ).length,
+        urgentAlerts: deadlines.filter((d) => new Date(d.dueDate) < now).length,
         totalCourses: courses.length,
       },
       recentAnnouncements: announcements.slice(0, 5),
       upcomingDeadlines: deadlines.slice(0, 5),
       courses,
     };
+
     setCache(cacheKey, result);
     res.json(result);
   } catch (err) {
@@ -122,7 +161,7 @@ router.get("/dashboard", authenticateToken, async (req, res) => {
   }
 });
 
-// Manual cache bust — call this after posting a new announcement
+// POST /api/classroom/refresh — manually bust user cache
 router.post("/refresh", authenticateToken, (req, res) => {
   clearUserCache(req.user.id);
   res.json({ message: "Cache cleared. Next request will fetch fresh data." });
