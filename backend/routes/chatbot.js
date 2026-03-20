@@ -96,6 +96,14 @@ const extractAnnouncementAction = (text) => {
   }
 };
 
+// ── Extract Drive file ID from a webViewLink URL ─────────────────
+// Drive URLs look like: https://drive.google.com/file/d/{fileId}/view
+const extractDriveFileId = (url) => {
+  if (!url) return null;
+  const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : null;
+};
+
 // ── POST /api/chatbot/message ────────────────────────────────────
 router.post("/message", authenticateToken, async (req, res) => {
   const { message, fileUrl, fileName } = req.body;
@@ -171,9 +179,15 @@ router.post("/message", authenticateToken, async (req, res) => {
           }
 
           if (targets.length > 0) {
+            // Build Drive file attachment from the chat message's uploaded file
+            const driveFileId = extractDriveFileId(fileUrl);
+            const driveFiles = driveFileId
+              ? [{ driveFileId, fileName: fileName || "Attachment" }]
+              : [];
+
             const results = await Promise.allSettled(
               targets.map((id) =>
-                createAnnouncement(id, action.text, user.access_token, user.refresh_token)
+                createAnnouncement(id, action.text, user.access_token, user.refresh_token, driveFiles)
               )
             );
             const posted = results.filter((r) => r.status === "fulfilled").length;
@@ -182,6 +196,7 @@ router.post("/message", authenticateToken, async (req, res) => {
             // Replace JSON block in reply with a clean confirmation
             reply = reply.replace(/\{[\s\S]*?"action"\s*:\s*"post_announcement"[\s\S]*?\}/, "").trim();
             reply += `\n\n✅ Posted to ${posted} class${posted !== 1 ? "es" : ""} successfully!`;
+            if (driveFiles.length > 0) reply += ` File "${fileName}" attached.`;
           } else {
             reply = reply.replace(/\{[\s\S]*?"action"\s*:\s*"post_announcement"[\s\S]*?\}/, "").trim();
             reply += "\n\n⚠️ I couldn't find that class. Please check the class name and try again.";
