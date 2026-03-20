@@ -330,6 +330,93 @@ const createAnnouncement = async (courseId, text, accessToken, refreshToken, dri
   return res.data;
 };
 
+// ── Parse due date/time into Classroom API format ─────────────────
+// dateStr: "YYYY-MM-DD", timeStr: "HH:MM" (optional, defaults 23:59)
+const parseDue = (dateStr, timeStr = "23:59") => {
+  if (!dateStr) return {};
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const [hours, minutes] = timeStr.split(":").map(Number);
+  return {
+    dueDate: { year, month, day },
+    dueTime: { hours: hours || 23, minutes: minutes || 59 },
+  };
+};
+
+// ── Create Assignment ─────────────────────────────────────────────
+// options: { title, description, dueDate, dueTime, points, driveFiles }
+const createAssignment = async (courseId, options, accessToken, refreshToken) => {
+  const classroom = createClient(accessToken, refreshToken);
+  const { title, description, dueDate, dueTime, points = 100, driveFiles = [] } = options;
+
+  const materials = driveFiles
+    .filter((f) => f.driveFileId)
+    .map((f) => ({
+      driveFile: {
+        driveFile: { id: f.driveFileId, title: f.fileName || "Attachment" },
+        shareMode: "STUDENT_COPY",
+      },
+    }));
+
+  const res = await classroom.courses.courseWork.create({
+    courseId,
+    requestBody: {
+      title,
+      description: description || "",
+      workType: "ASSIGNMENT",
+      state: "PUBLISHED",
+      maxPoints: points,
+      materials: materials.length > 0 ? materials : undefined,
+      ...parseDue(dueDate, dueTime),
+    },
+  });
+  return res.data;
+};
+
+// ── Create Submission Bin ─────────────────────────────────────────
+// Like an assignment but specifically for file submission — no description needed
+const createSubmissionBin = async (courseId, options, accessToken, refreshToken) => {
+  const classroom = createClient(accessToken, refreshToken);
+  const { title, description, dueDate, dueTime, points = 100 } = options;
+
+  const res = await classroom.courses.courseWork.create({
+    courseId,
+    requestBody: {
+      title,
+      description: description || "Submit your work here.",
+      workType: "ASSIGNMENT",
+      state: "PUBLISHED",
+      maxPoints: points,
+      submissionModificationMode: "MODIFIABLE_UNTIL_TURNED_IN",
+      ...parseDue(dueDate, dueTime),
+    },
+  });
+  return res.data;
+};
+
+// ── Create Quiz Assignment (attaches a Google Form) ───────────────
+// formUrl: the responder URL of an already-created Google Form
+// formId:  Drive file ID of the form
+const createQuizAssignment = async (courseId, options, accessToken, refreshToken) => {
+  const classroom = createClient(accessToken, refreshToken);
+  const { title, description, dueDate, dueTime, points = 100, formId, formUrl } = options;
+
+  const res = await classroom.courses.courseWork.create({
+    courseId,
+    requestBody: {
+      title,
+      description: description || "",
+      workType: "ASSIGNMENT",
+      state: "PUBLISHED",
+      maxPoints: points,
+      materials: formId ? [{
+        form: { formUrl, title },
+      }] : undefined,
+      ...parseDue(dueDate, dueTime),
+    },
+  });
+  return res.data;
+};
+
 module.exports = {
   getCourses,
   getTaughtCourses,
@@ -342,5 +429,9 @@ module.exports = {
   getCourseStudents,
   getCourseTeacherName,
   createAnnouncement,
+  createAssignment,
+  createSubmissionBin,
+  createQuizAssignment,
   normalizeMaterials,
 };
+
