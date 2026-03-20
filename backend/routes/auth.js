@@ -39,7 +39,9 @@ router.get("/google", (req, res) => {
       "https://www.googleapis.com/auth/classroom.announcements",
       "https://www.googleapis.com/auth/classroom.rosters.readonly",
       "https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly",
+      "https://www.googleapis.com/auth/classroom.coursework.teachers",
       "https://www.googleapis.com/auth/drive.file",
+      "https://www.googleapis.com/auth/forms.body",
     ],
     state: role,
   });
@@ -91,12 +93,12 @@ router.get("/google/callback", async (req, res) => {
   }
 });
 
-// Get current user (includes notifications_enabled)
+// Get current user (includes all notification preferences)
 router.get("/me", authenticateToken, async (req, res) => {
   try {
     const { data: user } = await supabase
       .from("users")
-      .select("id, email, name, picture, role, notifications_enabled")
+      .select("id, email, name, picture, role, notifications_enabled, notify_instant")
       .eq("id", req.user.id)
       .is("deleted_at", null)
       .single();
