@@ -5,10 +5,9 @@ const { getAllDeadlines, getAllAnnouncements, getCourses } = require("../service
 const supabase = require("../db/supabase");
 
 const router = express.Router();
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-const SYSTEM_PROMPT = `You are PulsBot, a friendly AI assistant for BUPulse — a smart school communication platform for Bulacan State University.
+const SYSTEM_PROMPT = `You are PulsBot, a friendly AI assistant for BUPulse — a smart school communication platform for Bicol University Polangui.
 Your role:
 - Help students with assignments, deadlines, and announcements from Google Classroom
 - Give study tips and time management advice
@@ -47,25 +46,28 @@ router.post("/message", authenticateToken, async (req, res) => {
             : "None in the next 7 days."
         }\n**Recent Announcements:**\n${announcements.slice(0, 3).map(a => `- [${a.courseName}]: "${a.text?.substring(0, 80)}..."`).join("\n")}`;
       }
-    } catch (e) {}
+    } catch (e) {
+      // silently skip if classroom data unavailable
+    }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    // Build messages array for Groq
+    const messages = [
+      { role: "system", content: SYSTEM_PROMPT + classroomContext },
+      ...conversationHistory.slice(-10).map(m => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      })),
+      { role: "user", content: message },
+    ];
 
-    const rawHistory = conversationHistory.slice(-10).map(m => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content }],
-    }));
+    const result = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages,
+      max_tokens: 1000,
+      temperature: 0.7,
+    });
 
-    const firstUserIndex = rawHistory.findIndex(m => m.role === "user");
-    const history = firstUserIndex >= 0 ? rawHistory.slice(firstUserIndex) : [];
-
-    const chat = model.startChat({ history });
-    const fullMessage = history.length === 0
-      ? `${SYSTEM_PROMPT}\n\n${message}${classroomContext}`
-      : message + classroomContext;
-
-    const result = await chat.sendMessage(fullMessage);
-    const reply = result.response.text() || "Sorry, I couldn't process that. Try again!";
+    const reply = result.choices[0]?.message?.content || "Sorry, I couldn't process that. Try again!";
 
     await supabase.from("chatbot_conversations").insert({
       user_id: req.user.id,
