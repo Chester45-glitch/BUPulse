@@ -19,6 +19,7 @@
     "googleapis": "^140.0.0",
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3"
+    "groq-sdk": "^0.7.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
