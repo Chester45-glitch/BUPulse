@@ -71,16 +71,69 @@ const getClassroomContext = async (user) => {
 };
 
 // ── Action parser ─────────────────────────────────────────────────
+// ── Brace-balanced JSON extractor ────────────────────────────────
+// The regex approach with [\s\S]*? stops at the FIRST } it finds,
+// which breaks on nested objects (e.g. quiz questions array).
+// This function finds the opening { of the action block, then walks
+// the string counting braces until it finds the matching closing }.
 const extractAction = (text) => {
   try {
-    const match = text.match(/\{[\s\S]*?"action"\s*:\s*"(?:post_announcement|create_assignment|create_submission_bin|create_quiz)"[\s\S]*?\}/);
-    if (!match) return null;
-    return JSON.parse(match[0]);
+    // Find the position of the action key
+    const actionKeyMatch = text.match(/"action"\s*:\s*"(?:post_announcement|create_assignment|create_submission_bin|create_quiz)"/);
+    if (!actionKeyMatch) return null;
+
+    // Walk backwards from the action key to find the opening {
+    let start = text.lastIndexOf("{", actionKeyMatch.index);
+    if (start === -1) return null;
+
+    // Walk forward counting braces to find the matching }
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    let end = -1;
+
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i];
+      if (escape)       { escape = false; continue; }
+      if (ch === "\\")  { escape = true;  continue; }
+      if (ch === '"')   { inString = !inString; continue; }
+      if (inString)     continue;
+      if (ch === "{" || ch === "[") depth++;
+      if (ch === "}" || ch === "]") {
+        depth--;
+        if (depth === 0) { end = i; break; }
+      }
+    }
+
+    if (end === -1) return null;
+    return JSON.parse(text.slice(start, end + 1));
   } catch { return null; }
 };
 
-const removeActionBlock = (text) =>
-  text.replace(/\{[\s\S]*?"action"\s*:\s*"(?:post_announcement|create_assignment|create_submission_bin|create_quiz)"[\s\S]*?\}/, "").trim();
+// Remove the action JSON block from the reply text
+const removeActionBlock = (text) => {
+  try {
+    const actionKeyMatch = text.match(/"action"\s*:\s*"(?:post_announcement|create_assignment|create_submission_bin|create_quiz)"/);
+    if (!actionKeyMatch) return text;
+
+    let start = text.lastIndexOf("{", actionKeyMatch.index);
+    if (start === -1) return text;
+
+    let depth = 0, inString = false, escape = false, end = -1;
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i];
+      if (escape)      { escape = false; continue; }
+      if (ch === "\\") { escape = true;  continue; }
+      if (ch === '"')  { inString = !inString; continue; }
+      if (inString)    continue;
+      if (ch === "{" || ch === "[") depth++;
+      if (ch === "}" || ch === "]") { depth--; if (depth === 0) { end = i; break; } }
+    }
+
+    if (end === -1) return text;
+    return (text.slice(0, start) + text.slice(end + 1)).trim();
+  } catch { return text; }
+};
 
 const extractDriveFileId = (url) => {
   if (!url) return null;
