@@ -26,16 +26,16 @@ const NAV_ITEMS = {
     { to: "/profile",            Icon: Icons.user,  label: "Profile" },
   ],
   professor: [
-    { to: "/professor",               Icon: Icons.grid,  label: "Dashboard" },
-    { to: "/professor/announcements", Icon: Icons.bell,  label: "Announcements" },
-    { to: "/professor/classes",       Icon: Icons.users, label: "My Classes" },
-    { to: "/ask-pulsbot",             Icon: Icons.chat,  label: "PulsBot" },
-    { to: "/professor/profile",       Icon: Icons.user,  label: "Profile" },
+    { to: "/professor",                    Icon: Icons.grid,  label: "Dashboard" },
+    { to: "/professor/announcements",      Icon: Icons.bell,  label: "Announcements" },
+    { to: "/professor/classes",            Icon: Icons.users, label: "My Classes" },
+    { to: "/professor/ask-pulsbot",        Icon: Icons.chat,  label: "PulsBot" },
+    { to: "/professor/profile",            Icon: Icons.user,  label: "Profile" },
   ],
   parent: [
-    { to: "/parent",         Icon: Icons.grid, label: "Dashboard" },
-    { to: "/ask-pulsbot",    Icon: Icons.chat, label: "PulsBot" },
-    { to: "/parent/profile", Icon: Icons.user, label: "Profile" },
+    { to: "/parent",                       Icon: Icons.grid, label: "Dashboard" },
+    { to: "/parent/ask-pulsbot",           Icon: Icons.chat, label: "PulsBot" },
+    { to: "/parent/profile",              Icon: Icons.user, label: "Profile" },
   ],
 };
 
