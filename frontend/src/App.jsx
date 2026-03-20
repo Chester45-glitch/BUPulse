@@ -25,9 +25,8 @@ const PrivateRoute = ({ children, allowedRoles }) => {
   if (loading) return <Spinner />;
   if (!user) return <Navigate to="/" replace />;
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    // Redirect to their correct dashboard
     if (user.role === "professor") return <Navigate to="/professor" replace />;
-    if (user.role === "parent") return <Navigate to="/parent" replace />;
+    if (user.role === "parent")    return <Navigate to="/parent"    replace />;
     return <Navigate to="/dashboard" replace />;
   }
   return children;
@@ -38,7 +37,7 @@ const RoleRedirect = () => {
   if (loading) return <Spinner />;
   if (!user) return <Navigate to="/" replace />;
   if (user.role === "professor") return <Navigate to="/professor" replace />;
-  if (user.role === "parent") return <Navigate to="/parent" replace />;
+  if (user.role === "parent")    return <Navigate to="/parent"    replace />;
   return <Navigate to="/dashboard" replace />;
 };
 
@@ -52,27 +51,33 @@ export default function App() {
         <Route path="/" element={user ? <RoleRedirect /> : <Login />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
 
-        {/* Student routes */}
+        {/* ── Student routes ─────────────────────────────────────── */}
         <Route path="/" element={<PrivateRoute allowedRoles={["student"]}><Layout /></PrivateRoute>}>
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="announcements" element={<Announcements />} />
-          <Route path="ask-pulsbot" element={<AskPulsBot />} />
-          <Route path="profile" element={<Profile />} />
-          <Route path="enrolled-classes" element={<EnrolledClasses />} />
+          <Route path="dashboard"          element={<Dashboard />} />
+          <Route path="announcements"      element={<Announcements />} />
+          <Route path="ask-pulsbot"        element={<AskPulsBot />} />
+          <Route path="profile"            element={<Profile />} />
+          <Route path="enrolled-classes"   element={<EnrolledClasses />} />
           <Route path="pending-activities" element={<PendingActivities />} />
         </Route>
 
-        {/* Professor routes */}
+        {/* ── Professor routes ────────────────────────────────────── */}
         <Route path="/professor" element={<PrivateRoute allowedRoles={["professor"]}><Layout role="professor" /></PrivateRoute>}>
-          <Route index element={<ProfessorDashboard />} />
+          <Route index                element={<ProfessorDashboard />} />
           <Route path="announcements" element={<Announcements role="professor" />} />
-          <Route path="profile" element={<Profile />} />
+          <Route path="profile"       element={<Profile />} />
+          {/* My Classes — renders dashboard with classes tab pre-selected */}
+          <Route path="classes"       element={<ProfessorDashboard defaultTab="classes" />} />
+          {/* PulsBot accessible to professors */}
+          <Route path="ask-pulsbot"   element={<AskPulsBot />} />
         </Route>
 
-        {/* Parent routes */}
+        {/* ── Parent routes ───────────────────────────────────────── */}
         <Route path="/parent" element={<PrivateRoute allowedRoles={["parent"]}><Layout role="parent" /></PrivateRoute>}>
-          <Route index element={<ParentDashboard />} />
-          <Route path="profile" element={<Profile />} />
+          <Route index              element={<ParentDashboard />} />
+          <Route path="profile"     element={<Profile />} />
+          {/* PulsBot accessible to parents */}
+          <Route path="ask-pulsbot" element={<AskPulsBot />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
