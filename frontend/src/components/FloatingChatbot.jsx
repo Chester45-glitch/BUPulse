@@ -38,6 +38,11 @@ export default function FloatingChatbot() {
   const [unread, setUnread] = useState(0);
   const bottomRef = useRef(null);
   const role = user?.role || "student";
+  const pulsbotPath = role === "professor"
+    ? "/professor/ask-pulsbot"
+    : role === "parent"
+    ? "/parent/ask-pulsbot"
+    : "/ask-pulsbot";
   const suggestions = SUGGESTIONS[role] || SUGGESTIONS.student;
 
   useEffect(() => {
@@ -84,7 +89,7 @@ export default function FloatingChatbot() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
-            <a href="/ask-pulsbot" title="Open full page" style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 7, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "rgba(255,255,255,0.7)", textDecoration: "none" }}>
+            <a href={pulsbotPath} title="Open full page" style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 7, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "rgba(255,255,255,0.7)", textDecoration: "none" }}>
               <IconExpand />
             </a>
             <button onClick={clearChat} title="Clear chat" style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 7, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "rgba(255,255,255,0.7)" }}>
