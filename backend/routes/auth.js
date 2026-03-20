@@ -38,6 +38,7 @@ router.get("/google", (req, res) => {
       "https://www.googleapis.com/auth/classroom.announcements.readonly",
       "https://www.googleapis.com/auth/classroom.announcements",
       "https://www.googleapis.com/auth/classroom.rosters.readonly",
+       "https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly",
     ],
     state: role,
   });
