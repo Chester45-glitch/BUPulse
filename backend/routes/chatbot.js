@@ -227,10 +227,19 @@ const handleAction = async (action, user, fileUrl, fileName) => {
       }, user.access_token, user.refresh_token))
     );
     const created = results.filter((r) => r.status === "fulfilled");
-    let reply = `✅ Quiz **"${action.title}"** created with ${action.questions.length} question${action.questions.length !== 1 ? "s" : ""} and posted to ${created.length} class${created.length !== 1 ? "es" : ""} (${classNames}).`;
-    if (action.dueDate) reply += `\n📅 Due: ${action.dueDate}${action.dueTime ? " at " + action.dueTime : ""}`;
-    reply += `\n📝 [Edit form questions](${form.editUrl})`;
-    reply += `\n🔗 [Student quiz link](${form.formUrl})`;
+    const failures = results.filter((r) => r.status === "rejected");
+
+    let reply;
+    if (created.length > 0) {
+      reply = `✅ Quiz **"${action.title}"** created with ${action.questions.length} question${action.questions.length !== 1 ? "s" : ""} and posted to ${created.length} class${created.length !== 1 ? "es" : ""} (${classNames}).`;
+      if (action.dueDate) reply += `\n📅 Due: ${action.dueDate}${action.dueTime ? " at " + action.dueTime : ""}`;
+      reply += `\n📝 [Edit form questions](${form.editUrl})`;
+      reply += `\n🔗 [Student quiz link](${form.formUrl})`;
+    } else {
+      // Surface the real error so it's visible
+      const errMsg = failures[0]?.reason?.message || "Unknown error";
+      reply = `⚠️ Quiz form was created but failed to post to Classroom.\n\nError: ${errMsg}\n\n📝 [Edit form](${form.editUrl})\n🔗 [Form link](${form.formUrl})`;
+    }
     return { reply, result: { created: created.length, type: "quiz", editUrl: form.editUrl, formUrl: form.formUrl } };
   }
 
