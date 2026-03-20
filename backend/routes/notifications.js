@@ -2,9 +2,9 @@ const express = require("express");
 const router = express.Router();
 const supabase = require("../db/supabase");
 const { authenticateToken } = require("../middleware/auth");
-const { checkDeadlinesForUser } = require("../services/scheduler");
+const { checkDeadlinesForUser, checkAnnouncementsForUser } = require("../services/scheduler");
 
-// GET /api/notifications — fetch notification log
+// ── GET /api/notifications — fetch log ───────────────────────────
 router.get("/", authenticateToken, async (req, res) => {
   const { data, error } = await supabase
     .from("notification_logs")
@@ -17,37 +17,45 @@ router.get("/", authenticateToken, async (req, res) => {
   res.json({ notifications: data });
 });
 
-// POST /api/notifications/trigger
+// ── POST /api/notifications/trigger — manual test send ───────────
 router.post("/trigger", authenticateToken, async (req, res) => {
   try {
     const { data: user } = await supabase
       .from("users")
-      .select("id, email, name, access_token, refresh_token, notifications_enabled")
+      .select("id, email, name, access_token, refresh_token, notifications_enabled, notify_instant")
       .eq("id", req.user.id)
       .single();
 
-    if (!user?.notifications_enabled) {
-      return res.json({ message: "Notifications are disabled for this user" });
-    }
+    if (!user?.notifications_enabled)
+      return res.json({ message: "Notifications are disabled for this user." });
 
     await checkDeadlinesForUser(user);
-    res.json({ message: "Notification check triggered" });
+    await checkAnnouncementsForUser(user);
+    res.json({ message: "Notification check triggered — check your email!" });
   } catch (err) {
     res.status(500).json({ error: "Failed to trigger check" });
   }
 });
 
-// PATCH /api/notifications/settings — save notification preference to DB
+// ── PATCH /api/notifications/settings ────────────────────────────
+// Body: { notifications_enabled?: boolean, notify_instant?: boolean }
 router.patch("/settings", authenticateToken, async (req, res) => {
-  const { notifications_enabled } = req.body;
+  const { notifications_enabled, notify_instant } = req.body;
 
-  if (typeof notifications_enabled !== "boolean") {
-    return res.status(400).json({ error: "notifications_enabled must be a boolean" });
-  }
+  const updates = {};
+
+  if (typeof notifications_enabled === "boolean")
+    updates.notifications_enabled = notifications_enabled;
+
+  if (typeof notify_instant === "boolean")
+    updates.notify_instant = notify_instant;
+
+  if (Object.keys(updates).length === 0)
+    return res.status(400).json({ error: "No valid fields provided." });
 
   const { error } = await supabase
     .from("users")
-    .update({ notifications_enabled })
+    .update(updates)
     .eq("id", req.user.id);
 
   if (error) {
@@ -55,7 +63,7 @@ router.patch("/settings", authenticateToken, async (req, res) => {
     return res.status(500).json({ error: "Failed to update notification settings" });
   }
 
-  res.json({ success: true, notifications_enabled });
+  res.json({ success: true, ...updates });
 });
 
 module.exports = router;
