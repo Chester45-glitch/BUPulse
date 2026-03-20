@@ -2,12 +2,16 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const session = require("express-session");
-const authRoutes = require("./routes/auth");
-const classroomRoutes = require("./routes/classroom");
+
+const authRoutes         = require("./routes/auth");
+const classroomRoutes    = require("./routes/classroom");
 const notificationRoutes = require("./routes/notifications");
-const chatbotRoutes = require("./routes/chatbot");
-const professorRoutes = require("./routes/professor");
-const parentRoutes = require("./routes/parent");
+const chatbotRoutes      = require("./routes/chatbot");
+const professorRoutes    = require("./routes/professor");
+const parentRoutes       = require("./routes/parent");
+const userRoutes         = require("./routes/user");
+const uploadRoutes       = require("./routes/upload");
+
 const { startScheduler } = require("./services/scheduler");
 
 const app = express();
@@ -22,7 +26,7 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: "25mb" })); // 10MB file = ~13.3MB base64, 25mb gives safe headroom
 app.use(session({
   secret: process.env.SESSION_SECRET || "bupulse-secret",
   resave: false,
@@ -34,15 +38,17 @@ app.use(session({
   },
 }));
 
-app.use("/api/auth", authRoutes);
-app.use("/api/classroom", classroomRoutes);
+app.use("/api/auth",          authRoutes);
+app.use("/api/classroom",     classroomRoutes);
 app.use("/api/notifications", notificationRoutes);
-app.use("/api/chatbot", chatbotRoutes);
-app.use("/api/professor", professorRoutes);
-app.use("/api/parent", parentRoutes);
+app.use("/api/chatbot",       chatbotRoutes);
+app.use("/api/professor",     professorRoutes);
+app.use("/api/parent",        parentRoutes);
+app.use("/api/user",          userRoutes);
+app.use("/api/upload",        uploadRoutes);
 
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", message: "BUPulse API is running", timestamp: new Date() });
+  res.json({ status: "ok", message: "BUPulse API running", timestamp: new Date() });
 });
 
 app.use((err, req, res, next) => {
