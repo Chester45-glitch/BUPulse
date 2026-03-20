@@ -26,7 +26,7 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json({ limit: "15mb" }));
+app.use(express.json({ limit: "25mb" })); // 10MB file = ~13.3MB base64, 25mb gives safe headroom
 app.use(session({
   secret: process.env.SESSION_SECRET || "bupulse-secret",
   resave: false,
