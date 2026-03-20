@@ -158,6 +158,7 @@ export default function Profile() {
   const navigate = useNavigate();
 
   const [notifEnabled, setNotifEnabled] = useState(false);
+  const [notifInstant, setNotifInstant] = useState(false);
   const [notifLoading, setNotifLoading] = useState(true);
   const [notifSaved, setNotifSaved]   = useState(false);
   const [showDelete, setShowDelete]   = useState(false);
@@ -166,20 +167,24 @@ export default function Profile() {
 
   const rc = ROLE_CFG[user?.role] || ROLE_CFG.student;
 
-  /* Fetch notification preference on mount */
+  /* Fetch notification preferences on mount */
   useEffect(() => {
     api.get("/auth/me")
-      .then(r => setNotifEnabled(r.data.user?.notifications_enabled ?? false))
+      .then(r => {
+        setNotifEnabled(r.data.user?.notifications_enabled ?? false);
+        setNotifInstant(r.data.user?.notify_instant ?? false);
+      })
       .catch(() => {})
       .finally(() => setNotifLoading(false));
   }, []);
 
-  /* Save notification preference */
-  const handleNotifChange = async (val) => {
+  /* Save a single notification preference */
+  const saveNotifPref = async (patch) => {
     setNotifLoading(true);
     try {
-      await api.patch("/notifications/settings", { notifications_enabled: val });
-      setNotifEnabled(val);
+      await api.patch("/notifications/settings", patch);
+      if ("notifications_enabled" in patch) setNotifEnabled(patch.notifications_enabled);
+      if ("notify_instant"        in patch) setNotifInstant(patch.notify_instant);
       setNotifSaved(true);
       setTimeout(() => setNotifSaved(false), 2000);
     } catch {
@@ -188,6 +193,9 @@ export default function Profile() {
       setNotifLoading(false);
     }
   };
+
+  const handleNotifChange  = (val) => saveNotifPref({ notifications_enabled: val });
+  const handleInstantChange = (val) => saveNotifPref({ notify_instant: val });
 
   /* Delete account */
   const handleDelete = async () => {
@@ -281,27 +289,48 @@ export default function Profile() {
         <InfoRow icon={IcoShield} label="Sign-in Method" value="Google OAuth 2.0" border={false} />
       </div>
 
-      {/* ── Notification preference ── */}
+      {/* ── Notification preferences ── */}
       <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid var(--card-border)", padding: "18px 22px", boxShadow: "var(--shadow-sm)", marginBottom: 14 }}>
         <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 16 }}>Notifications</h3>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+        {/* Toggle 1 — email on/off */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, paddingBottom: 14, borderBottom: "1px solid var(--border-color)", marginBottom: 14 }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
             <div style={{ width: 36, height: 36, borderRadius: 9, background: "var(--bg-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", flexShrink: 0 }}><IcoBell /></div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>Email notifications</div>
-              <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Receive deadline reminders and announcements by email</div>
+              <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Deadline reminders and announcement alerts</div>
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-            <NotificationToggle enabled={notifEnabled} onChange={handleNotifChange} loading={notifLoading} />
-            {notifSaved && (
-              <span style={{ fontSize: 11, color: "#16a34a", display: "flex", alignItems: "center", gap: 3, animation: "fadeIn 0.2s ease" }}>
-                <IcoCheck /> Saved
-              </span>
-            )}
+          <NotificationToggle enabled={notifEnabled} onChange={handleNotifChange} loading={notifLoading} />
+        </div>
+
+        {/* Toggle 2 — instant vs scheduled */}
+        <div style={{ opacity: notifEnabled ? 1 : 0.4, pointerEvents: notifEnabled ? "auto" : "none", transition: "opacity 0.2s" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 9, background: notifInstant ? "rgba(22,163,74,0.1)" : "var(--bg-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", color: notifInstant ? "var(--green-700)" : "var(--text-muted)", flexShrink: 0, transition: "all 0.2s" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              </div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>
+                  Instant announcements
+                  {notifInstant && <span style={{ marginLeft: 7, fontSize: 10, fontWeight: 700, background: "rgba(22,163,74,0.1)", color: "var(--green-700)", padding: "2px 7px", borderRadius: 99 }}>ON</span>}
+                </div>
+                <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
+                  {notifInstant ? "Email sent immediately when a new post appears" : "Announcements checked every 30 minutes (default)"}
+                </div>
+              </div>
+            </div>
+            <NotificationToggle enabled={notifInstant} onChange={handleInstantChange} loading={notifLoading} />
           </div>
         </div>
+
+        {notifSaved && (
+          <div style={{ marginTop: 12, fontSize: 12, color: "#16a34a", display: "flex", alignItems: "center", gap: 4 }}>
+            <IcoCheck /> Saved
+          </div>
+        )}
       </div>
 
       {/* ── Danger zone ── */}
