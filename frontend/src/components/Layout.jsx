@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
+import FloatingChatbot from "./FloatingChatbot";
 
 export default function Layout({ role }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -11,7 +12,7 @@ export default function Layout({ role }) {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg-primary)" }}>
-      {/* Reserve 72px for collapsed sidebar */}
+      {/* Reserve 72px for collapsed sidebar on desktop */}
       <div style={{ width: 72, flexShrink: 0 }} className="sidebar-spacer" />
 
       <Sidebar
@@ -23,10 +24,16 @@ export default function Layout({ role }) {
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
         <Header onMenuClick={() => setSidebarOpen(true)} role={userRole} />
-        <main style={{ flex: 1, padding: "24px 28px", overflowY: "auto", overflowX: "hidden" }} className="page-main">
+        <main
+          style={{ flex: 1, padding: "24px 28px", overflowY: "auto", overflowX: "hidden" }}
+          className="page-main"
+        >
           <Outlet />
         </main>
       </div>
+
+      {/* PulsBot available to ALL roles — floats above all content */}
+      <FloatingChatbot />
 
       <style>{`
         @media (max-width: 768px) {
