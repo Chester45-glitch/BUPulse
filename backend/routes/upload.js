@@ -17,12 +17,8 @@ const createDriveClient = (accessToken, refreshToken) => {
 };
 
 // ── Buffer → Readable stream ─────────────────────────────────────
-const bufferToStream = (buffer) => {
-  const stream = new Readable();
-  stream.push(buffer);
-  stream.push(null);
-  return stream;
-};
+// Readable.from() is the safe cross-version way to stream a buffer
+const bufferToStream = (buffer) => Readable.from(buffer);
 
 // ── POST /api/upload/drive ────────────────────────────────────────
 // Body: { fileName, fileType, fileData (base64), announcementContext? }
@@ -88,7 +84,15 @@ router.post("/drive", authenticateToken, async (req, res) => {
     });
   } catch (err) {
     console.error("Drive upload error:", err.message);
-    res.status(500).json({ error: err.message || "Upload failed." });
+    // Surface the actual Google API error so the frontend can show it
+    const message = err.response?.data?.error?.message
+      || err.message
+      || "Upload failed.";
+    // Scope error — user needs to re-login
+    if (message.includes("insufficient") || err.status === 403) {
+      return res.status(403).json({ error: "Missing Drive permission. Please log out and log back in, then try again." });
+    }
+    res.status(500).json({ error: message });
   }
 });
 
