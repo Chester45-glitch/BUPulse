@@ -1,11 +1,12 @@
 const express = require("express");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const Groq = require("groq-sdk");
 const { authenticateToken } = require("../middleware/auth");
 const { getAllDeadlines, getAllAnnouncements, getCourses } = require("../services/googleClassroom");
 const supabase = require("../db/supabase");
 
 const router = express.Router();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const SYSTEM_PROMPT = `You are PulsBot, a friendly AI assistant for BUPulse — a smart school communication platform for Bulacan State University.
 Your role:
