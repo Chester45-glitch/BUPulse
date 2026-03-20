@@ -93,9 +93,10 @@ export default function AnnouncementForm({ courses = [], onSuccess }) {
         )
       );
     } catch (err) {
+      const msg = err.response?.data?.error || err.message || "Upload failed";
       setFiles((prev) =>
         prev.map((f) =>
-          f.tempId === tempId ? { ...f, uploading: false, error: "Upload failed" } : f
+          f.tempId === tempId ? { ...f, uploading: false, error: msg } : f
         )
       );
     }
