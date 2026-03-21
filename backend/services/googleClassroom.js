@@ -445,16 +445,11 @@ const createQuizAssignment = async (courseId, options, accessToken, refreshToken
   const classroom = createClient(accessToken, refreshToken);
   const { title, description, dueDate, dueTime, points = 100, formId, formUrl } = options;
 
-  // Attach the form as a Drive file — this is the most reliable method.
-  // Forms ARE Drive files (formId === Drive file ID), and driveFile attachment
-  // always works whereas the `form` material type can silently fail.
-  const materials = formId
-    ? [{
-        driveFile: {
-          driveFile: { id: formId, title },
-          shareMode: "VIEW",
-        },
-      }]
+  // Use `link` material — attaches the form URL directly.
+  // This bypasses all Drive/Forms visibility issues since it's just a URL.
+  // Students click the link to open and submit the Google Form.
+  const materials = formUrl
+    ? [{ link: { url: formUrl, title: `${title} (Quiz)` } }]
     : undefined;
 
   try {
@@ -464,7 +459,7 @@ const createQuizAssignment = async (courseId, options, accessToken, refreshToken
         title,
         description: description
           ? `${description}\n\nQuiz link: ${formUrl}`
-          : `Quiz link: ${formUrl}`,
+          : `Complete the quiz using the link below:\n${formUrl}`,
         workType: "ASSIGNMENT",
         state: "PUBLISHED",
         maxPoints: points,
@@ -474,7 +469,6 @@ const createQuizAssignment = async (courseId, options, accessToken, refreshToken
     });
     return res.data;
   } catch (err) {
-    // Surface the actual API error message so callers can report it
     const msg = err.response?.data?.error?.message || err.message;
     throw new Error(`Classroom API error (courseId ${courseId}): ${msg}`);
   }
