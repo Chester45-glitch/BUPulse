@@ -332,10 +332,55 @@ const createAnnouncement = async (courseId, text, accessToken, refreshToken, dri
 
 // ── Parse due date/time into Classroom API format ─────────────────
 // dateStr: "YYYY-MM-DD", timeStr: "HH:MM" (optional, defaults 23:59)
+// ── Resolve relative date strings to YYYY-MM-DD ──────────────────
+const resolveDate = (dateStr) => {
+  if (!dateStr) return null;
+  const s = dateStr.toLowerCase().trim();
+
+  const pad = (n) => String(n).padStart(2, "0");
+  const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  const now = new Date();
+
+  if (s === "today")    return fmt(now);
+  if (s === "tomorrow") {
+    const d = new Date(now); d.setDate(d.getDate() + 1); return fmt(d);
+  }
+  if (s === "next week") {
+    const d = new Date(now); d.setDate(d.getDate() + 7); return fmt(d);
+  }
+  if (s === "next monday") {
+    const d = new Date(now);
+    d.setDate(d.getDate() + ((1 + 7 - d.getDay()) % 7 || 7));
+    return fmt(d);
+  }
+  if (s === "next friday") {
+    const d = new Date(now);
+    d.setDate(d.getDate() + ((5 + 7 - d.getDay()) % 7 || 7));
+    return fmt(d);
+  }
+
+  // Already in YYYY-MM-DD format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  // Try native Date parse as fallback (e.g. "March 30", "March 30 2025")
+  const parsed = new Date(dateStr);
+  if (!isNaN(parsed.getTime())) return fmt(parsed);
+
+  return null; // unresolvable — caller will skip dueDate
+};
+
+// ── Parse due date/time into Classroom API format ─────────────────
 const parseDue = (dateStr, timeStr = "23:59") => {
-  if (!dateStr) return {};
-  const [year, month, day] = dateStr.split("-").map(Number);
-  const [hours, minutes] = timeStr.split(":").map(Number);
+  const resolved = resolveDate(dateStr);
+  if (!resolved) return {}; // no due date — don't set it
+
+  const [year, month, day] = resolved.split("-").map(Number);
+  const [hours, minutes]   = (timeStr || "23:59").split(":").map(Number);
+
+  // Validate all parts are real numbers
+  if (!year || !month || !day) return {};
+
   return {
     dueDate: { year, month, day },
     dueTime: { hours: hours || 23, minutes: minutes || 59 },
