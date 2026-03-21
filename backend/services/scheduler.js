@@ -18,7 +18,13 @@ const checkDeadlinesForUser = async (user) => {
   if (!user.access_token) return;
 
   const now = new Date();
-  const deadlines = await getAllDeadlines(user.access_token, user.refresh_token);
+  let deadlines;
+  try {
+    deadlines = await getAllDeadlines(user.access_token, user.refresh_token);
+  } catch (e) {
+    if (e.message?.includes("Insufficient Permission") || e.code === 403) return;
+    throw e;
+  }
   const upcoming = [];
   const overdue  = [];
 
@@ -103,7 +109,16 @@ const checkAnnouncementsForUser = async (user) => {
   if (!user.access_token) return;
 
   const lastCheck = await getLastAnnouncementCheck(user.id);
-  const announcements = await getAllAnnouncements(user.access_token, user.refresh_token);
+
+  let announcements;
+  try {
+    announcements = await getAllAnnouncements(user.access_token, user.refresh_token);
+  } catch (e) {
+    // Insufficient Permission = token expired or scope not granted yet.
+    // Skip silently — will retry on next scheduled run.
+    if (e.message?.includes("Insufficient Permission") || e.code === 403) return;
+    throw e; // re-throw unexpected errors
+  }
 
   // Find announcements newer than last check
   const newAnnouncements = announcements.filter(
@@ -209,10 +224,82 @@ const startScheduler = () => {
   console.log("📅 Scheduler started: deadlines at 7AM/5PM, announcements every 30 min (Asia/Manila)");
 };
 
+// ══════════════════════════════════════════════════════════════════
+// INSTANT ANNOUNCEMENT NOTIFICATIONS
+// Called immediately when a professor posts an announcement.
+// Emails all enrolled students in the affected courses who have
+// notifications enabled.
+// ══════════════════════════════════════════════════════════════════
+const sendAnnouncementNotifications = async ({ text, courseIds, postedBy }) => {
+  if (!courseIds?.length || !text) return;
+
+  console.log(`[Announce] Sending notifications for ${courseIds.length} course(s)...`);
+
+  // Get all students enrolled in these courses who have notifications on
+  const { data: students } = await supabase
+    .from("users")
+    .select("id, email, name, access_token, refresh_token, notifications_enabled")
+    .eq("role", "student")
+    .eq("notifications_enabled", true)
+    .not("access_token", "is", null);
+
+  if (!students?.length) {
+    console.log("[Announce] No eligible students found.");
+    return;
+  }
+
+  // Get professor info for context
+  const { data: professor } = await supabase
+    .from("users")
+    .select("name")
+    .eq("id", postedBy)
+    .single();
+
+  const profName = professor?.name || "Your professor";
+
+  let sent = 0;
+  for (const student of students) {
+    try {
+      // De-duplicate: don't send same announcement twice within 5 mins
+      const refKey = `ann-instant-${courseIds.sort().join("-")}-${text.slice(0,40).replace(/\s/g,"")}`;
+      if (await wasRecentlySent(student.id, "announcement_instant", refKey, 0.08)) continue;
+
+      const firstName = student.name?.split(" ")[0] || "Student";
+      const preview   = text.length > 200 ? text.slice(0, 200) + "…" : text;
+
+      await sendEmail(
+        student.access_token,
+        student.refresh_token,
+        student.email,
+        `📢 New announcement from ${profName}`,
+        announcementTemplate(firstName, [{
+          type:       "ANNOUNCEMENT",
+          courseName: "Your class",
+          text:       preview,
+          link:       process.env.FRONTEND_URL + "/announcements",
+        }])
+      );
+
+      await logNotification(student.id, "announcement_instant", {
+        reference_key: refKey,
+        posted_by: postedBy,
+      });
+
+      sent++;
+    } catch (e) {
+      if (e.message?.includes("Insufficient Permission") || e.code === 403) continue;
+      console.error(`[Announce] Failed for ${student.email}:`, e.message);
+    }
+  }
+
+  console.log(`[Announce] Sent to ${sent}/${students.length} students.`);
+};
+
 module.exports = {
   startScheduler,
   checkDeadlinesForUser,
   checkAnnouncementsForUser,
   triggerInstantAnnouncementCheck,
+  sendAnnouncementNotifications,
   checkAll,
 };
