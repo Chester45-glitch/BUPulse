@@ -403,8 +403,9 @@ export default function Announcements({ role }) {
             );
           })}
         </div>
+      )}
 
-        {/* Edit Modal */}
+      {/* Edit Modal */}
         {editModal && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
             <div style={{ background: "var(--card-bg)", borderRadius: 16, padding: 24, width: "100%", maxWidth: 520, boxShadow: "var(--shadow-xl)" }}>
