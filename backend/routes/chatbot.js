@@ -353,7 +353,10 @@ router.post("/message", authenticateToken, async (req, res) => {
         .eq("id", req.user.id);
     }
 
-    const hasQuizIntent = /quiz|form|question|generate|create.*from|based on|convert/i.test(message || "");
+    // Quiz intent: explicit keywords OR professor just uploaded a file with no message
+    // (they'll type the class/details next, we store the file for that follow-up)
+    const hasQuizIntent = /quiz|form|question|generate|create.*from|based on|convert|make.*from|read.*file|use.*file|from.*file|from.*pdf|from.*ppt|from.*doc/i.test(message || "")
+      || (!message?.trim() && !!driveFileId); // file-only upload = likely quiz prep
 
     // Look up last uploaded file if not in current message
     let effectiveDriveFileId = driveFileId;
@@ -374,6 +377,14 @@ router.post("/message", authenticateToken, async (req, res) => {
     }
 
     const isQuizFromFile = user.role === "professor" && effectiveDriveFileId && hasQuizIntent;
+
+    // If professor asks to generate from a file but no file is cached, prompt them
+    if (!isQuizFromFile && user.role === "professor" && hasQuizIntent &&
+        /from.*file|from.*pdf|from.*ppt|from.*doc|read.*file|use.*file/i.test(message || "")) {
+      const noFileReply = "📎 Please attach the file (PDF, PPTX, or DOCX) to the chat first, then ask me to generate the quiz. I'll read it and create the questions automatically!";
+      await supabase.from("chat_messages").insert({ user_id: req.user.id, role: "assistant", content: noFileReply });
+      return res.json({ message: noFileReply, timestamp: new Date().toISOString() });
+    }
 
     if (isQuizFromFile) {
       try {
