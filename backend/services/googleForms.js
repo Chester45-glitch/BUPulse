@@ -11,6 +11,17 @@ const createFormsClient = (accessToken, refreshToken) => {
   return google.forms({ version: "v1", auth });
 };
 
+// ── Drive client (needed to share the form file) ──────────────────
+const createDriveClient = (accessToken, refreshToken) => {
+  const auth = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+  auth.setCredentials({ access_token: accessToken, refresh_token: refreshToken });
+  return google.drive({ version: "v3", auth });
+};
+
 // ── Build the question body (no title here — title goes on item) ──
 const buildQuestionBody = (q) => {
   const type = (q.type || "SHORT_ANSWER").toUpperCase().replace(" ", "_");
@@ -158,7 +169,20 @@ const createForm = async (title, description, questions = [], accessToken, refre
     }
   }
 
-  // ── Step 4: Return URLs ───────────────────────────────────────
+  // ── Step 4: Share the form via Drive so Classroom can attach it ──
+  // Without this, Classroom throws @AttachmentNotVisible when trying
+  // to attach the file because it can't verify visibility.
+  try {
+    const drive = createDriveClient(accessToken, refreshToken);
+    await drive.permissions.create({
+      fileId: formId,
+      requestBody: { role: "reader", type: "anyone" },
+    });
+  } catch (e) {
+    console.warn("Could not share form file — Classroom attachment may fail:", e.message);
+  }
+
+  // ── Step 5: Return URLs ───────────────────────────────────────
   const finalForm = await forms.forms.get({ formId });
 
   return {
