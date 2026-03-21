@@ -5,23 +5,21 @@ const { Readable } = require("stream");
 const supabase = require("../db/supabase");
 const { authenticateToken } = require("../middleware/auth");
 
-// ── In-memory store for uploaded file data (for quiz generation) ──
-// Keyed by driveFileId, auto-expires after 30 minutes
+// ── Shared file cache ─────────────────────────────────────────────
+// Store file data so the chatbot can extract text for quiz generation.
+// Uses a simple module-level Map with 30-min TTL.
 const fileCache = new Map();
-const FILE_CACHE_TTL = 30 * 60 * 1000;
-
-const cacheFile = (driveFileId, data) => {
-  fileCache.set(driveFileId, { ...data, ts: Date.now() });
-  // Auto-cleanup
-  setTimeout(() => fileCache.delete(driveFileId), FILE_CACHE_TTL);
+const cacheFile = (id, data) => {
+  fileCache.set(id, { ...data, ts: Date.now() });
+  setTimeout(() => fileCache.delete(id), 30 * 60 * 1000);
 };
-
-const getCachedFile = (driveFileId) => {
-  const entry = fileCache.get(driveFileId);
-  if (!entry) return null;
-  if (Date.now() - entry.ts > FILE_CACHE_TTL) { fileCache.delete(driveFileId); return null; }
-  return entry;
+const getCachedFile = (id) => {
+  const e = fileCache.get(id);
+  if (!e || Date.now() - e.ts > 30 * 60 * 1000) return null;
+  return e;
 };
+// Make cache accessible to chatbot.js via a shared module
+const getFileCache = () => fileCache;
 
 // ── Google Drive client ───────────────────────────────────────────
 const createDriveClient = (accessToken, refreshToken) => {
@@ -109,6 +107,9 @@ router.get("/file-data/:fileId", authenticateToken, (req, res) => {
   res.json({ fileData: cached.fileData, fileType: cached.fileType, fileName: cached.fileName });
 });
 
+// Export cache accessor for chatbot.js
+module.exports.getFileCache = getFileCache;
+
 // ── DELETE /api/upload/drive/:fileId ─────────────────────────────
 router.delete("/drive/:fileId", authenticateToken, async (req, res) => {
   try {
@@ -126,5 +127,8 @@ router.delete("/drive/:fileId", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Failed to delete file." });
   }
 });
+
+// Export cache accessor for quiz generation
+router.getFileCache = () => fileCache;
 
 module.exports = router;

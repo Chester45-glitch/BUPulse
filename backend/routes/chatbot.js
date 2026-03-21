@@ -244,11 +244,11 @@ const handleAction = async (action, user, fileUrl, fileName) => {
 // ── File-based quiz handler ───────────────────────────────────────
 // Called when a professor attaches a file and asks to generate a quiz from it.
 // Uses pending quiz state stored in supabase to handle the confirm step.
-// ── Shared file cache (populated by upload.js via setCachedFileData) ──
-const _fileCache = new Map();
-const setCachedFileData = (id, data) => _fileCache.set(id, { ...data, ts: Date.now() });
+// ── File cache shared from upload.js ─────────────────────────────
+const uploadRouter = require("./upload");
 const getCachedFileData = (id) => {
-  const e = _fileCache.get(id);
+  const cache = uploadRouter.getFileCache();
+  const e = cache.get(id);
   if (!e || Date.now() - e.ts > 30 * 60 * 1000) return null;
   return e;
 };
@@ -327,36 +327,6 @@ const handleFileQuiz = async (req, user, message, driveFileId, fileType, fileNam
   return `📄 I read **${resolvedName}** and generated ${questions.length} questions.\n\n${classLine}\n${dateLine}\n\n**Questions preview:**\n\`\`\`\n${preview}\n\`\`\`\n\n${courseMatch ? "Should I create this quiz and post it to Classroom?" : "Please tell me which class to post this to."}`;
 };
 
-
-  // Step 9: Save draft for confirmation
-  if (courseMatch) {
-    await supabase.from("quiz_drafts").upsert({
-      user_id:     user.id,
-      action_json: action,
-      created_at:  new Date().toISOString(),
-    }, { onConflict: "user_id" });
-  }
-
-  // Step 10: Build preview reply
-  const preview = formatQuestionsPreview(questions);
-  const classLine = courseMatch
-    ? `📚 Class: ${courseMatch.name}`
-    : `⚠️ Class not found in message — which class should I post this to?`;
-  const dateLine  = rawDate ? `📅 Due: ${rawDate}` : `📅 Due: not set — please specify`;
-  const methodNote = extracted.method === "vision" ? " _(read via AI vision)_" : "";
-
-  return `📄 I read **${resolvedFileName}**${methodNote} and generated ${questions.length} questions.
-
-${classLine}
-${dateLine}
-
-**Questions preview:**
-\`\`\`
-${preview}
-\`\`\`
-
-${courseMatch ? "Should I create this quiz and post it to Classroom?" : "Please tell me which class to post this to."}`;
-};
 
 // ── POST /api/chatbot/message ─────────────────────────────────────
 router.post("/message", authenticateToken, async (req, res) => {
