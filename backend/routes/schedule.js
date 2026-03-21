@@ -1,8 +1,9 @@
 const express = require("express");
-const router  = express.Router();
+const router  = require("express").Router();
 const supabase = require("../db/supabase");
 const { authenticateToken } = require("../middleware/auth");
 const Groq = require("groq-sdk");
+const { extractFileContent } = require("../services/fileExtractor");
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -70,11 +71,24 @@ router.delete("/:id", authenticateToken, async (req, res) => {
 });
 
 // ── POST /api/schedule/extract ────────────────────────────────────
-// Extract schedule from uploaded file text using Groq AI
-// Body: { text } — raw text extracted from PDF/image/doc
+// Extract schedule from uploaded file using Groq AI
+// Body: { fileData (base64), fileType, fileName } OR { text, fileName } (legacy)
 router.post("/extract", authenticateToken, async (req, res) => {
-  const { text, fileName } = req.body;
-  if (!text?.trim()) return res.status(400).json({ error: "text is required" });
+  const { text, fileName, fileData, fileType } = req.body;
+
+  let extractedText = text?.trim() || "";
+
+  // If fileData provided, run it through the file extractor first (handles PDF, PPTX, DOCX, images)
+  if (fileData && fileType) {
+    try {
+      const extracted = await extractFileContent(fileData, fileType, fileName);
+      extractedText = extracted.text;
+    } catch (err) {
+      return res.status(400).json({ error: `Could not read file: ${err.message}` });
+    }
+  }
+
+  if (!extractedText) return res.status(400).json({ error: "No readable content found in file." });
 
   const prompt = `Extract the class schedule from this text. Return ONLY a valid JSON array.
 
@@ -90,7 +104,7 @@ If a class meets multiple days, create one entry per day.
 Return ONLY the JSON array, no explanation, no markdown.
 
 TEXT:
-${text.slice(0, 6000)}`;
+${extractedText.slice(0, 6000)}`;
 
   try {
     const result = await groq.chat.completions.create({

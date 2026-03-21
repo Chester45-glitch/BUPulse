@@ -1,5 +1,6 @@
 const express = require("express");
 const Groq = require("groq-sdk");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { authenticateToken } = require("../middleware/auth");
 const {
   getAllDeadlines, getAllAnnouncements, getCourses, getTaughtCourses,
@@ -13,6 +14,44 @@ const supabase = require("../db/supabase");
 
 const router = express.Router();
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_KEY || "");
+
+// ── Vision helper: use Gemini when message has an image/file attached ──
+// Returns the model reply as a plain string.
+const askGeminiWithVision = async (systemPrompt, history, userMessage, fileData, fileType, fileName) => {
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+  // Build a plain-text chat history for context (Gemini doesn't have system role)
+  const contextLines = [
+    systemPrompt,
+    "",
+    ...(history || []).slice(-8).map(m => `${m.role === "assistant" ? "PulsBot" : "User"}: ${m.content}`),
+  ].join("\n");
+
+  const parts = [
+    { text: `${contextLines}\n\nUser: ${userMessage || "Please describe or analyze the attached file."}` },
+  ];
+
+  // Attach the file as inline data
+  if (fileData && fileType) {
+    // Gemini accepts base64 inline data for images and PDFs
+    const supportedMime = fileType.startsWith("image/")
+      ? fileType
+      : fileType === "application/pdf"
+      ? "application/pdf"
+      : null;
+
+    if (supportedMime) {
+      parts.push({ inlineData: { mimeType: supportedMime, data: fileData } });
+    } else {
+      // For unsupported types, just mention the filename in the prompt
+      parts[0].text += `\n\n[Attached file: ${fileName || "file"} (${fileType})]`;
+    }
+  }
+
+  const result = await model.generateContent(parts);
+  return result.response.text() || "Sorry, I couldn't analyze that file.";
+};
 
 // ── System prompt ─────────────────────────────────────────────────
 const buildSystemPrompt = (role, classroomContext) => `You are PulsBot, a friendly AI assistant for BUPulse — the academic platform of Bicol University Polangui.
@@ -463,7 +502,13 @@ router.post("/message", authenticateToken, async (req, res) => {
       }
     }
 
-    // ── NORMAL GROQ FLOW ───────────────────────────────────────────
+    // ── SMART MODEL ROUTING ────────────────────────────────────────
+    // Use Gemini (vision-capable) when:
+    //   • an image is directly attached (fileType starts with image/)
+    //   • a PDF is attached and the user is asking about its content
+    //   • any file is attached and user has NOT triggered quiz/assignment flow
+    // Otherwise use Groq (llama) for everything else — faster, better at actions.
+
     const { data: history } = await supabase
       .from("chat_messages").select("role, content")
       .eq("user_id", req.user.id).order("created_at", { ascending: true }).limit(20);
@@ -471,34 +516,77 @@ router.post("/message", authenticateToken, async (req, res) => {
     const classroomContext = await getClassroomContext(user);
     const systemPrompt     = buildSystemPrompt(user.role, classroomContext);
 
-    const result = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...(history || []).slice(-16).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content })),
-      ],
-      max_tokens: 8000, temperature: 0.7,
-    });
+    // Determine if this message has a vision/file component that needs Gemini
+    const isImageAttached = fileType?.startsWith("image/");
+    const isPdfAttached   = fileType === "application/pdf";
+    const isFileMessage   = !!(fileUrl || driveFileId) && fileType;
+    const hasVisionIntent = isImageAttached || (isFileMessage && !hasQuizIntent);
 
-    let reply = result.choices[0]?.message?.content || "Sorry, I couldn't process that. Try again!";
+    // Retrieve cached file data for vision (uploaded via /upload/drive)
+    let cachedFileData = null;
+    let cachedFileType = fileType;
+    if (hasVisionIntent && driveFileId) {
+      try {
+        const uploadRouter = require("./upload");
+        const cache = uploadRouter.getFileCache ? uploadRouter.getFileCache() : null;
+        if (cache) {
+          const entry = cache.get(driveFileId);
+          if (entry) { cachedFileData = entry.fileData; cachedFileType = entry.fileType; }
+        }
+      } catch {} // non-fatal
+    }
+
+    let reply;
     let actionResult = null;
+    let modelUsed = "groq";
 
-    if (user.role === "professor") {
-      const action = extractAction(reply);
-      if (action && user.access_token) {
-        try {
-          const { reply: ar, result: res2 } = await handleAction(action, user, fileUrl, fileName);
-          reply        = removeActionBlock(reply);
-          reply        = reply ? `${reply}\n\n${ar}` : ar;
-          actionResult = res2;
-        } catch (err) {
-          reply = removeActionBlock(reply) + `\n\n⚠️ Action failed: ${err.message}`;
+    if (hasVisionIntent && (cachedFileData || isImageAttached)) {
+      // ── GEMINI VISION PATH ──────────────────────────────────────
+      modelUsed = "gemini";
+      try {
+        reply = await askGeminiWithVision(
+          systemPrompt,
+          history,
+          message,
+          cachedFileData,
+          cachedFileType,
+          fileName
+        );
+      } catch (err) {
+        console.error("Gemini vision error:", err.message);
+        // Fallback: tell user what went wrong
+        reply = `📎 I received your file **${fileName || "attachment"}**, but I couldn't analyze it visually: ${err.message}.\n\nMake sure \`GEMINI_API_KEY\` is set in your server environment. You can also describe what's in the file and I'll help you with it!`;
+      }
+    } else {
+      // ── GROQ (LLAMA) PATH — text-only ──────────────────────────
+      const result = await groq.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...(history || []).slice(-16).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content })),
+        ],
+        max_tokens: 8000, temperature: 0.7,
+      });
+
+      reply = result.choices[0]?.message?.content || "Sorry, I couldn't process that. Try again!";
+
+      if (user.role === "professor") {
+        const action = extractAction(reply);
+        if (action && user.access_token) {
+          try {
+            const { reply: ar, result: res2 } = await handleAction(action, user, fileUrl, fileName);
+            reply        = removeActionBlock(reply);
+            reply        = reply ? `${reply}\n\n${ar}` : ar;
+            actionResult = res2;
+          } catch (err) {
+            reply = removeActionBlock(reply) + `\n\n⚠️ Action failed: ${err.message}`;
+          }
         }
       }
     }
 
     await supabase.from("chat_messages").insert({ user_id: req.user.id, role: "assistant", content: reply });
-    res.json({ message: reply, actionResult, timestamp: new Date().toISOString() });
+    res.json({ message: reply, actionResult, modelUsed, timestamp: new Date().toISOString() });
   } catch (err) {
     console.error("Chatbot error:", err);
     res.status(500).json({ error: "PulsBot is temporarily unavailable." });
