@@ -10,6 +10,8 @@ import EnrolledClasses from "./pages/EnrolledClasses";
 import PendingActivities from "./pages/PendingActivities";
 import ProfessorDashboard from "./pages/ProfessorDashboard";
 import ParentDashboard from "./pages/ParentDashboard";
+import Schedule from "./pages/Schedule";
+import Attendance from "./pages/Attendance";
 import Layout from "./components/Layout";
 
 const Spinner = () => (
@@ -59,6 +61,8 @@ export default function App() {
           <Route path="profile"            element={<Profile />} />
           <Route path="enrolled-classes"   element={<EnrolledClasses />} />
           <Route path="pending-activities" element={<PendingActivities />} />
+          <Route path="schedule"           element={<Schedule />} />
+          <Route path="attendance"         element={<Attendance />} />
         </Route>
 
         {/* ── Professor routes ────────────────────────────────────── */}
@@ -66,17 +70,16 @@ export default function App() {
           <Route index                element={<ProfessorDashboard />} />
           <Route path="announcements" element={<Announcements role="professor" />} />
           <Route path="profile"       element={<Profile />} />
-          {/* My Classes — renders dashboard with classes tab pre-selected */}
           <Route path="classes"       element={<ProfessorDashboard defaultTab="classes" />} />
-          {/* PulsBot accessible to professors */}
           <Route path="ask-pulsbot"   element={<AskPulsBot />} />
+          <Route path="schedule"      element={<Schedule />} />
+          <Route path="attendance"    element={<Attendance />} />
         </Route>
 
         {/* ── Parent routes ───────────────────────────────────────── */}
         <Route path="/parent" element={<PrivateRoute allowedRoles={["parent"]}><Layout role="parent" /></PrivateRoute>}>
           <Route index              element={<ParentDashboard />} />
           <Route path="profile"     element={<Profile />} />
-          {/* PulsBot accessible to parents */}
           <Route path="ask-pulsbot" element={<AskPulsBot />} />
         </Route>
 
