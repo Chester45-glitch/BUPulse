@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import api from "../utils/api";
 
@@ -10,6 +10,8 @@ export function useSharedChat() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  // Remember last uploaded file so text-only follow-up messages can reference it
+  const lastFileRef = useRef(null);
 
   // Greeting message based on role
   const greeting = (u) => ({
@@ -48,15 +50,26 @@ export function useSharedChat() {
 
   const send = useCallback(
     async ({ text, fileUrl, fileName, fileType, driveFileId } = {}) => {
+      // If this message has a file, remember it for follow-up messages
+      if (driveFileId) {
+        lastFileRef.current = { fileUrl, fileName, fileType, driveFileId };
+      }
+      // If no file in this message but there's a remembered file and quiz intent,
+      // attach the remembered file automatically
+      const hasQuizIntent = /quiz|form|question|generate|create.*from|based on|convert|make.*from|read.*file|use.*file|from.*file|from.*pdf|from.*ppt|from.*doc/i.test(text || "");
+      const effectiveFileId   = driveFileId   || (hasQuizIntent && lastFileRef.current?.driveFileId) || undefined;
+      const effectiveFileUrl  = fileUrl       || (hasQuizIntent && lastFileRef.current?.fileUrl)     || undefined;
+      const effectiveFileName = fileName      || (hasQuizIntent && lastFileRef.current?.fileName)    || undefined;
+      const effectiveFileType = fileType      || (hasQuizIntent && lastFileRef.current?.fileType)    || undefined;
       const trimmed = text?.trim();
       if (!trimmed && !fileUrl) return;
       if (loading) return;
 
       const userMsg = {
         role: "user",
-        content: trimmed || `[Attached: ${fileName}]`,
-        fileUrl,
-        fileName,
+        content: trimmed || `[Attached: ${effectiveFileName || fileName}]`,
+        fileUrl:  effectiveFileUrl  || fileUrl,
+        fileName: effectiveFileName || fileName,
       };
 
       setMessages((prev) => [...prev, userMsg]);
@@ -65,8 +78,10 @@ export function useSharedChat() {
       try {
         const res = await api.post("/chatbot/message", {
           message: trimmed || userMsg.content,
-          fileUrl,
-          fileName,
+          fileUrl:     effectiveFileUrl,
+          fileName:    effectiveFileName,
+          fileType:    effectiveFileType,
+          driveFileId: effectiveFileId,
         });
         setMessages((prev) => [...prev, { role: "assistant", content: res.data.message }]);
       } catch {
