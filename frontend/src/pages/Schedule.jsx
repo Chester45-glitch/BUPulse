@@ -165,9 +165,7 @@ export default function Schedule() {
 
       // Extract text from file content and send to AI
       setExtracting(true);
-      // Use the file data for text extraction
       const extractRes = await api.post("/schedule/extract", {
-        text: `Schedule file: ${file.name}. Please extract any class schedule information. Note: This is a ${file.type} file.`,
         fileName: file.name,
         fileData: base64,
         fileType: file.type,
