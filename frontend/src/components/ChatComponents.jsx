@@ -66,14 +66,14 @@ export function ChatInput({ onSend, disabled, compact = false }) {
         reader.readAsDataURL(file);
       });
       const res = await api.post("/upload/drive", { fileName: file.name, fileType: file.type, fileData: base64 });
-      setPendingFile({ name: file.name, url: res.data.driveFileUrl });
+      setPendingFile({ name: file.name, type: file.type, url: res.data.driveFileUrl, driveFileId: res.data.driveFileId, quizReady: res.data.quizReady });
     } catch { alert("Upload failed. Please try again."); }
     finally { setUploading(false); }
   };
 
   const submit = () => {
     if (disabled || uploading || (!text.trim() && !pendingFile)) return;
-    onSend({ text, fileUrl: pendingFile?.url, fileName: pendingFile?.name });
+    onSend({ text, fileUrl: pendingFile?.url, fileName: pendingFile?.name, fileType: pendingFile?.type, driveFileId: pendingFile?.driveFileId });
     setText("");
     setPendingFile(null);
   };
@@ -84,7 +84,7 @@ export function ChatInput({ onSend, disabled, compact = false }) {
     <div style={{ display:"flex", flexDirection:"column", gap:0 }}>
       {pendingFile && (
         <div style={{ padding:"5px 12px 0", display:"flex", alignItems:"center", gap:6 }}>
-          <span style={{ fontSize:11.5, color:"var(--green-700)", flex:1 }}>📎 {pendingFile.name}</span>
+          <span style={{ fontSize:11.5, color:"var(--green-700)", flex:1 }}>📎 {pendingFile.name}{pendingFile.quizReady ? " ✨ quiz-ready" : ""}</span>
           <button onClick={() => setPendingFile(null)} style={{ background:"none", border:"none", color:"#dc2626", cursor:"pointer", fontSize:14 }}>✕</button>
         </div>
       )}
