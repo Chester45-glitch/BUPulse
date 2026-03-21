@@ -83,64 +83,55 @@ const getClassroomContext = async (user) => {
 // The regex approach with [\s\S]*? stops at the FIRST } it finds,
 // which breaks on nested objects (e.g. quiz questions array).
 // This function finds the opening { of the action block, then walks
-// the string counting braces until it finds the matching closing }.
-const extractAction = (text) => {
-  try {
-    // Find the position of the action key
-    const actionKeyMatch = text.match(/"action"\s*:\s*"(?:post_announcement|create_assignment|create_submission_bin|create_quiz)"/);
-    if (!actionKeyMatch) return null;
-
-    // Walk backwards from the action key to find the opening {
-    let start = text.lastIndexOf("{", actionKeyMatch.index);
-    if (start === -1) return null;
-
-    // Walk forward counting braces to find the matching }
-    let depth = 0;
-    let inString = false;
-    let escape = false;
-    let end = -1;
-
-    for (let i = start; i < text.length; i++) {
-      const ch = text[i];
-      if (escape)       { escape = false; continue; }
-      if (ch === "\\")  { escape = true;  continue; }
-      if (ch === '"')   { inString = !inString; continue; }
-      if (inString)     continue;
-      if (ch === "{" || ch === "[") depth++;
-      if (ch === "}" || ch === "]") {
-        depth--;
-        if (depth === 0) { end = i; break; }
+// ── Brace-balanced extractor (handles nested objects/arrays) ────────
+// Finds ALL action blocks in the text, then picks the best one.
+// Priority: non-quiz actions win over quiz if both appear (LLM bug).
+const extractAllActions = (text) => {
+  const actions = [];
+  const actionRegex = /"action"\s*:\s*"(?:post_announcement|create_assignment|create_submission_bin|create_quiz)"/g;
+  let match;
+  while ((match = actionRegex.exec(text)) !== null) {
+    try {
+      let start = text.lastIndexOf("{", match.index);
+      if (start === -1) continue;
+      let depth = 0, inStr = false, esc = false, end = -1;
+      for (let i = start; i < text.length; i++) {
+        const ch = text[i];
+        if (esc) { esc = false; continue; }
+        if (ch === "\\") { esc = true; continue; }
+        if (ch === '"') { inStr = !inStr; continue; }
+        if (inStr) continue;
+        if (ch === "{" || ch === "[") depth++;
+        if (ch === "}" || ch === "]") { depth--; if (depth === 0) { end = i; break; } }
       }
-    }
-
-    if (end === -1) return null;
-    return JSON.parse(text.slice(start, end + 1));
-  } catch { return null; }
+      if (end === -1) continue;
+      const parsed = JSON.parse(text.slice(start, end + 1));
+      actions.push({ action: parsed, start, end });
+    } catch { continue; }
+  }
+  return actions;
 };
 
-// Remove the action JSON block from the reply text
+const extractAction = (text) => {
+  const all = extractAllActions(text);
+  if (!all.length) return null;
+  // If multiple actions, prefer non-quiz (submission_bin, assignment, announcement)
+  // over quiz — the LLM sometimes appends an unwanted create_quiz block
+  const preferred = all.find((a) => a.action.action !== "create_quiz") || all[0];
+  return preferred.action;
+};
+
+// Remove ALL action blocks from reply text so none leak to the user
 const removeActionBlock = (text) => {
-  try {
-    const actionKeyMatch = text.match(/"action"\s*:\s*"(?:post_announcement|create_assignment|create_submission_bin|create_quiz)"/);
-    if (!actionKeyMatch) return text;
-
-    let start = text.lastIndexOf("{", actionKeyMatch.index);
-    if (start === -1) return text;
-
-    let depth = 0, inString = false, escape = false, end = -1;
-    for (let i = start; i < text.length; i++) {
-      const ch = text[i];
-      if (escape)      { escape = false; continue; }
-      if (ch === "\\") { escape = true;  continue; }
-      if (ch === '"')  { inString = !inString; continue; }
-      if (inString)    continue;
-      if (ch === "{" || ch === "[") depth++;
-      if (ch === "}" || ch === "]") { depth--; if (depth === 0) { end = i; break; } }
-    }
-
-    if (end === -1) return text;
-    return (text.slice(0, start) + text.slice(end + 1)).trim();
-  } catch { return text; }
+  const all = extractAllActions(text);
+  if (!all.length) return text;
+  // Remove from end to start so indices stay valid
+  let result = text;
+  for (let i = all.length - 1; i >= 0; i--) {
+    const { start, end } = all[i];
+    result = (result.slice(0, start) + result.slice(end + 1)).trim();
+  }
+  return result;
 };
 
 const extractDriveFileId = (url) => {
@@ -240,7 +231,7 @@ const handleAction = async (action, user, fileUrl, fileName) => {
     } else {
       // Surface the real error so it's visible
       const errMsg = failures[0]?.reason?.message || "Unknown error";
-      reply = `⚠️ Quiz form was created but failed to post to Classroom.\n\nError: ${errMsg}\n\n📝 [Edit form](${form.editUrl})\n🔗 [Form link](${form.formUrl})`;
+      reply = `⚠️ Quiz form created but failed to post to Google Classroom.\n\nError: ${errMsg}\n\n📝 [Edit form](${form.editUrl})\n🔗 [Form link](${form.formUrl})`;
     }
     return { reply, result: { created: created.length, type: "quiz", editUrl: form.editUrl, formUrl: form.formUrl } };
   }
