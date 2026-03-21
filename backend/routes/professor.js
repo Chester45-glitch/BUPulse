@@ -8,6 +8,8 @@ const {
   getAllAnnouncementsForCourses,
   createAnnouncement,
   getCourseStudents,
+  deleteAnnouncement,
+  editAnnouncement,
 } = require("../services/googleClassroom");
 
 // ── Middleware ───────────────────────────────────────────────────
@@ -189,6 +191,53 @@ router.get(
       res.json({ students });
     } catch (err) {
       res.status(500).json({ error: err.message || "Failed to fetch students" });
+    }
+  }
+);
+
+// ── DELETE /api/professor/announcements/:courseId/:annId ──────────
+router.delete(
+  "/announcements/:courseId/:annId",
+  authenticateToken,
+  professorOnly,
+  async (req, res) => {
+    try {
+      const tokens = await getUserTokens(req.user.id);
+      await deleteAnnouncement(
+        req.params.courseId,
+        req.params.annId,
+        tokens.access_token,
+        tokens.refresh_token
+      );
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Delete announcement error:", err.message);
+      res.status(500).json({ error: err.message || "Failed to delete announcement" });
+    }
+  }
+);
+
+// ── PATCH /api/professor/announcements/:courseId/:annId ───────────
+router.patch(
+  "/announcements/:courseId/:annId",
+  authenticateToken,
+  professorOnly,
+  async (req, res) => {
+    try {
+      const { text } = req.body;
+      if (!text?.trim()) return res.status(400).json({ error: "text is required" });
+      const tokens = await getUserTokens(req.user.id);
+      const updated = await editAnnouncement(
+        req.params.courseId,
+        req.params.annId,
+        text,
+        tokens.access_token,
+        tokens.refresh_token
+      );
+      res.json({ announcement: updated });
+    } catch (err) {
+      console.error("Edit announcement error:", err.message);
+      res.status(500).json({ error: err.message || "Failed to edit announcement" });
     }
   }
 );

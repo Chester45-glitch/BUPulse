@@ -4,6 +4,7 @@ const { authenticateToken } = require("../middleware/auth");
 const {
   getAllDeadlines, getAllAnnouncements, getCourses, getTaughtCourses,
   createAnnouncement, createAssignment, createSubmissionBin, createQuizAssignment,
+  deleteAnnouncement, editAnnouncement,
 } = require("../services/googleClassroom");
 const { createForm } = require("../services/googleForms");
 const { extractFileContent } = require("../services/fileExtractor");
@@ -41,6 +42,14 @@ Always show a PLAIN TEXT draft summary first (NOT JSON), then ask "Should I crea
 4. CREATE QUIZ (Google Form with questions):
 Generate questions based on the topic. Show all questions in plain text for review.
 {"action":"create_quiz","courseId":"<id>","courseName":"<n>","title":"<t>","description":"<d>","dueDate":"YYYY-MM-DD","dueTime":"HH:MM","points":100,"questions":[{"question":"<q>","type":"RADIO","options":["A","B","C","D"],"correct":0,"points":1}]}
+
+5. DELETE ANNOUNCEMENT:
+First list recent announcements from that class, show them numbered, ask "Which one do you want to delete?"
+{"action":"delete_announcement","courseId":"<id>","courseName":"<n>","announcementId":"<id>","announcementText":"<first 80 chars of text>"}
+
+6. EDIT ANNOUNCEMENT:
+Show the current text first, then show the new text, confirm before patching.
+{"action":"edit_announcement","courseId":"<id>","courseName":"<n>","announcementId":"<id>","newText":"<full updated text>"}
 
 CRITICAL RULES — follow these exactly:
 - STEP 1: Show a plain text summary of what you will do. Ask "Should I post/create this?"
@@ -90,7 +99,7 @@ const getClassroomContext = async (user) => {
 // Priority: non-quiz actions win over quiz if both appear (LLM bug).
 const extractAllActions = (text) => {
   const actions = [];
-  const actionRegex = /"action"\s*:\s*"(?:post_announcement|create_assignment|create_submission_bin|create_quiz)"/g;
+  const actionRegex = /"action"\s*:\s*"(?:post_announcement|create_assignment|create_submission_bin|create_quiz|delete_announcement|edit_announcement)"/g;
   let match;
   while ((match = actionRegex.exec(text)) !== null) {
     try {
@@ -236,6 +245,32 @@ const handleAction = async (action, user, fileUrl, fileName) => {
       reply = `⚠️ Quiz form created but failed to post to Google Classroom.\n\nError: ${errMsg}\n\n📝 [Edit form](${form.editUrl})\n🔗 [Form link](${form.formUrl})`;
     }
     return { reply, result: { created: created.length, type: "quiz", editUrl: form.editUrl, formUrl: form.formUrl } };
+  }
+
+  // ── Delete announcement ──
+  if (action.action === "delete_announcement") {
+    if (!action.announcementId) return { reply: "⚠️ No announcement ID specified. Please tell me which announcement to delete.", result: null };
+    const targets = await resolveTargets(action, user.access_token, user.refresh_token);
+    if (!targets.length) return { reply: "⚠️ Couldn't find that class.", result: null };
+    await deleteAnnouncement(targets[0].id, action.announcementId, user.access_token, user.refresh_token);
+    let reply = `🗑️ Announcement deleted from **${targets[0].name}**.`;
+    if (action.announcementText) reply += `
+> "${action.announcementText.slice(0, 80)}..."`;
+    return { reply, result: { type: "delete_announcement" } };
+  }
+
+  // ── Edit announcement ──
+  if (action.action === "edit_announcement") {
+    if (!action.announcementId) return { reply: "⚠️ No announcement ID specified.", result: null };
+    if (!action.newText) return { reply: "⚠️ No new text provided.", result: null };
+    const targets = await resolveTargets(action, user.access_token, user.refresh_token);
+    if (!targets.length) return { reply: "⚠️ Couldn't find that class.", result: null };
+    await editAnnouncement(targets[0].id, action.announcementId, action.newText, user.access_token, user.refresh_token);
+    let reply = `✏️ Announcement updated in **${targets[0].name}**.
+
+**New text:**
+${action.newText}`;
+    return { reply, result: { type: "edit_announcement" } };
   }
 
   return { reply: "⚠️ Unknown action.", result: null };
