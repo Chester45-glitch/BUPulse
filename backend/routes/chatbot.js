@@ -16,14 +16,17 @@ const router = express.Router();
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_KEY || "");
 
-// ── Vision helper: use Gemini when message has an image/file attached ──
-// Returns the model reply as a plain string.
-const askGeminiWithVision = async (systemPrompt, history, userMessage, fileData, fileType, fileName) => {
-  const model = genAI.getGenerativeModel(
-    { model: "gemini-2.5-flash-preview-04-17" },
-    { apiVersion: "v1beta" }
-  );
+// ── Gemini model fallback list (tries each until one works) ───────
+const GEMINI_MODELS = [
+  "gemini-2.5-flash-preview-04-17",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-1.5-flash-001",
+];
 
+// ── Vision helper: use Gemini when message has an image/file attached ──
+const askGeminiWithVision = async (systemPrompt, history, userMessage, fileData, fileType, fileName) => {
   // Build a plain-text chat history for context (Gemini doesn't have system role)
   const contextLines = [
     systemPrompt,
@@ -37,7 +40,6 @@ const askGeminiWithVision = async (systemPrompt, history, userMessage, fileData,
 
   // Attach the file as inline data
   if (fileData && fileType) {
-    // Gemini accepts base64 inline data for images and PDFs
     const supportedMime = fileType.startsWith("image/")
       ? fileType
       : fileType === "application/pdf"
@@ -47,13 +49,29 @@ const askGeminiWithVision = async (systemPrompt, history, userMessage, fileData,
     if (supportedMime) {
       parts.push({ inlineData: { mimeType: supportedMime, data: fileData } });
     } else {
-      // For unsupported types, just mention the filename in the prompt
       parts[0].text += `\n\n[Attached file: ${fileName || "file"} (${fileType})]`;
     }
   }
 
-  const result = await model.generateContent(parts);
-  return result.response.text() || "Sorry, I couldn't analyze that file.";
+  let lastError;
+  for (const modelName of GEMINI_MODELS) {
+    try {
+      const model = genAI.getGenerativeModel(
+        { model: modelName },
+        { apiVersion: "v1beta" }
+      );
+      const result = await model.generateContent(parts);
+      console.log(`PulsBot vision: using model ${modelName}`);
+      return result.response.text() || "Sorry, I couldn't analyze that file.";
+    } catch (err) {
+      if (err.message?.includes("404") || err.message?.includes("not found")) {
+        lastError = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`No working Gemini model found. Last error: ${lastError?.message}`);
 };
 
 // ── System prompt ─────────────────────────────────────────────────
