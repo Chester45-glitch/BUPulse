@@ -11,6 +11,7 @@ const {
   deleteAnnouncement,
   editAnnouncement,
 } = require("../services/googleClassroom");
+const { sendAnnouncementNotifications } = require("../services/scheduler");
 
 // ── Middleware ───────────────────────────────────────────────────
 const professorOnly = (req, res, next) => {
@@ -159,6 +160,16 @@ router.post("/announcements", authenticateToken, professorOnly, async (req, res)
 
     const posted = succeeded.length;
     const failed = targets.length - posted;
+
+    // ── Fire instant email notifications (non-blocking) ──────────
+    if (posted > 0) {
+      const postedCourseIds = succeeded.map(({ courseId }) => courseId);
+      sendAnnouncementNotifications({
+        text:      text.trim(),
+        courseIds: postedCourseIds,
+        postedBy:  req.user.id,
+      }).catch(e => console.error("Announcement notify error:", e.message));
+    }
 
     res.json({
       success: posted > 0,
