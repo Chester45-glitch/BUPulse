@@ -19,7 +19,10 @@ const extractWithGemini = async (base64Data, mimeType, hint = "") => {
     throw new Error("GEMINI_API_KEY is not set. Add it to your Render environment variables.");
   }
 
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+  const model = genAI.getGenerativeModel(
+    { model: "gemini-1.5-flash" },
+    { apiVersion: "v1" }
+  );
 
   const result = await model.generateContent([
     {
