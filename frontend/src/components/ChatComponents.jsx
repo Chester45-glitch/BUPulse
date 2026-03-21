@@ -89,7 +89,7 @@ export function ChatInput({ onSend, disabled, compact = false }) {
         </div>
       )}
       <div style={{ display:"flex", gap:8, alignItems:"flex-end", padding:pad }}>
-        <input ref={fileRef} type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" onChange={handleFile} style={{ display:"none" }} />
+        <input ref={fileRef} type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx" onChange={handleFile} style={{ display:"none" }} />
         <button onClick={() => fileRef.current?.click()} disabled={uploading} title="Attach file"
           style={{ width:34, height:34, borderRadius:9, background:"var(--bg-tertiary)", border:"1.5px solid var(--card-border)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:uploading?"var(--green-600)":"var(--text-muted)", flexShrink:0 }}>
           {uploading ? <div style={{ width:13, height:13, border:"2px solid #ccc", borderTopColor:"var(--green-600)", borderRadius:"50%", animation:"spin 0.8s linear infinite" }} /> : <IconAttach />}
