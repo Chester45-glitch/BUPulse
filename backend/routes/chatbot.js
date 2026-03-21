@@ -324,7 +324,8 @@ const handleFileQuiz = async (req, user, message, driveFileId, fileType, fileNam
   const preview   = formatQuestionsPreview(questions);
   const classLine = courseMatch ? `📚 Class: ${courseMatch.name}` : `⚠️ Which class should I post this to?`;
   const dateLine  = rawDate ? `📅 Due: ${rawDate}` : `📅 Due: not set — please specify`;
-  return `📄 I read **${resolvedName}** and generated ${questions.length} questions.\n\n${classLine}\n${dateLine}\n\n**Questions preview:**\n\`\`\`\n${preview}\n\`\`\`\n\n${courseMatch ? "Should I create this quiz and post it to Classroom?" : "Please tell me which class to post this to."}`;
+  const largeQuizNote = questions.length > 25 ? `\n⏱️ _This took multiple AI calls to generate ${questions.length} questions._` : "";
+  return `📄 I read **${resolvedName}** and generated ${questions.length} questions.${largeQuizNote}\n\n${classLine}\n${dateLine}\n\n**Questions preview (showing first 5):**\n\`\`\`\n${preview}\n\`\`\`\n\n${courseMatch ? "Should I create this quiz and post it to Classroom?" : "Please tell me which class to post this to."}`;
 };
 
 
@@ -355,6 +356,32 @@ router.post("/message", authenticateToken, async (req, res) => {
 
     // Quiz intent: explicit keywords OR professor just uploaded a file with no message
     // (they'll type the class/details next, we store the file for that follow-up)
+    // Check for confirmation of a pending quiz draft FIRST — before anything else
+    const isConfirmWord = /^(yes|confirm|post|go ahead|create it|post it|sure|ok|okay|do it|proceed)[\s!.]*$/i.test(message?.trim() || "");
+    if (isConfirmWord && user.role === "professor") {
+      const { data: draft } = await supabase
+        .from("quiz_drafts")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (draft && Date.now() - new Date(draft.created_at).getTime() < 30 * 60 * 1000) {
+        try {
+          const action = draft.action_json;
+          const { reply: ar } = await handleAction(action, user, null, null);
+          await supabase.from("quiz_drafts").delete().eq("id", draft.id);
+          await supabase.from("chat_messages").insert({ user_id: req.user.id, role: "assistant", content: ar });
+          return res.json({ message: ar, timestamp: new Date().toISOString() });
+        } catch (err) {
+          const errReply = `⚠️ Failed to post quiz: ${err.message}`;
+          await supabase.from("chat_messages").insert({ user_id: req.user.id, role: "assistant", content: errReply });
+          return res.json({ message: errReply, timestamp: new Date().toISOString() });
+        }
+      }
+    }
+
     const hasQuizIntent = /quiz|form|question|generate|create.*from|based on|convert|make.*from|read.*file|use.*file|from.*file|from.*pdf|from.*ppt|from.*doc/i.test(message || "")
       || (!message?.trim() && !!driveFileId); // file-only upload = likely quiz prep
 
@@ -413,7 +440,7 @@ router.post("/message", authenticateToken, async (req, res) => {
         { role: "system", content: systemPrompt },
         ...(history || []).slice(-16).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content })),
       ],
-      max_tokens: 1500, temperature: 0.7,
+      max_tokens: 8000, temperature: 0.7,
     });
 
     let reply = result.choices[0]?.message?.content || "Sorry, I couldn't process that. Try again!";
