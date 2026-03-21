@@ -20,8 +20,8 @@ const extractWithGemini = async (base64Data, mimeType, hint = "") => {
   }
 
   const model = genAI.getGenerativeModel(
-    { model: "gemini-1.5-flash" },
-    { apiVersion: "v1" }
+    { model: "gemini-2.5-flash-preview-04-17" },
+    { apiVersion: "v1beta" }
   );
 
   const result = await model.generateContent([
