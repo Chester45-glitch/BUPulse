@@ -11,6 +11,8 @@ const professorRoutes    = require("./routes/professor");
 const parentRoutes       = require("./routes/parent");
 const userRoutes         = require("./routes/user");
 const uploadRoutes       = require("./routes/upload");
+const scheduleRoutes     = require("./routes/schedule");
+const attendanceRoutes   = require("./routes/attendance");
 
 const { startScheduler } = require("./services/scheduler");
 
@@ -46,6 +48,8 @@ app.use("/api/professor",     professorRoutes);
 app.use("/api/parent",        parentRoutes);
 app.use("/api/user",          userRoutes);
 app.use("/api/upload",        uploadRoutes);
+app.use("/api/schedule",      scheduleRoutes);
+app.use("/api/attendance",    attendanceRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "BUPulse API running", timestamp: new Date() });
