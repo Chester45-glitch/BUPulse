@@ -47,7 +47,7 @@ export function useSharedChat() {
   }, [user]); // only depends on user, not historyLoaded — avoids double-fetch
 
   const send = useCallback(
-    async ({ text, fileUrl, fileName } = {}) => {
+    async ({ text, fileUrl, fileName, fileType, driveFileId } = {}) => {
       const trimmed = text?.trim();
       if (!trimmed && !fileUrl) return;
       if (loading) return;
