@@ -4,12 +4,27 @@ import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 
 const TITLES = {
-  "/dashboard": "Dashboard",
-  "/announcements": "Announcements",
-  "/ask-pulsbot": "Ask PulsBot",
-  "/profile": "My Profile",
-  "/enrolled-classes": "Enrolled Classes",
+  // Student
+  "/dashboard":          "Dashboard",
+  "/announcements":      "Announcements",
+  "/ask-pulsbot":        "PulsBot",
+  "/profile":            "My Profile",
+  "/enrolled-classes":   "Enrolled Classes",
   "/pending-activities": "Pending Activities",
+  "/schedule":           "My Schedule",
+  "/attendance":         "Attendance",
+  // Professor
+  "/professor":                    "Dashboard",
+  "/professor/announcements":      "Announcements",
+  "/professor/classes":            "My Classes",
+  "/professor/ask-pulsbot":        "PulsBot",
+  "/professor/profile":            "My Profile",
+  "/professor/schedule":           "My Schedule",
+  "/professor/attendance":         "Attendance",
+  // Parent
+  "/parent":             "Dashboard",
+  "/parent/ask-pulsbot": "PulsBot",
+  "/parent/profile":     "My Profile",
 };
 
 const initials = (name = "") => {
@@ -17,12 +32,12 @@ const initials = (name = "") => {
   return p.length >= 2 ? `${p[0][0]}${p[p.length - 1][0]}`.toUpperCase() : name.slice(0, 2).toUpperCase();
 };
 
-/* ── Simple B&W SVG Icons ─────────────────────────────────── */
 const MoonIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
   </svg>
 );
+
 const SunIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="5" />
@@ -32,34 +47,8 @@ const SunIcon = () => (
     <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
   </svg>
 );
-const IconUser = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-  </svg>
-);
-const IconBook = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-  </svg>
-);
-const IconClock = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-  </svg>
-);
-const IconLogout = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-    <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-  </svg>
-);
-const IconBUPulse = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-  </svg>
-);
 
-export default function Header({ onMenuClick }) {
+export default function Header({ onMenuClick, role = "student" }) {
   const { pathname } = useLocation();
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
@@ -75,11 +64,23 @@ export default function Header({ onMenuClick }) {
 
   const handleLogout = async () => { setDropOpen(false); await logout(); navigate("/", { replace: true }); };
 
-  const menuItems = [
-    { Icon: IconUser,   label: "Profile",            path: "/profile" },
-    { Icon: IconBook,   label: "Enrolled Classes",    path: "/enrolled-classes" },
-    { Icon: IconClock,  label: "Pending Activities",  path: "/pending-activities" },
-  ];
+  // Role-aware dropdown items — professors and parents get their own scoped paths
+  const menuItems = role === "professor"
+    ? [
+        { icon: "👤", label: "Profile",     path: "/professor/profile" },
+        { icon: "📚", label: "My Classes",  path: "/professor/classes" },
+        { icon: "💬", label: "PulsBot",     path: "/professor/ask-pulsbot" },
+      ]
+    : role === "parent"
+    ? [
+        { icon: "👤", label: "Profile",     path: "/parent/profile" },
+        { icon: "💬", label: "PulsBot",     path: "/parent/ask-pulsbot" },
+      ]
+    : [
+        { icon: "👤", label: "Profile",             path: "/profile" },
+        { icon: "📚", label: "Enrolled Classes",    path: "/enrolled-classes" },
+        { icon: "⏳", label: "Pending Activities",  path: "/pending-activities" },
+      ];
 
   return (
     <header style={{
@@ -97,11 +98,9 @@ export default function Header({ onMenuClick }) {
           <div style={{ width: 20, height: 2, background: "var(--text-secondary)", borderRadius: 2 }} />
         </button>
 
-        {/* Mobile logo — SVG icon instead of emoji */}
+        {/* Mobile logo */}
         <div className="mobile-logo" style={{ display: "none", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 7, background: "linear-gradient(135deg, var(--accent-gold), var(--accent-amber))", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
-            <IconBUPulse />
-          </div>
+          <div style={{ width: 28, height: 28, borderRadius: 7, background: "linear-gradient(135deg, var(--accent-gold), var(--accent-amber))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📚</div>
           <span style={{ fontFamily: "var(--font-display)", fontSize: 16, color: "var(--text-primary)" }}>BUPulse</span>
         </div>
 
@@ -174,7 +173,7 @@ export default function Header({ onMenuClick }) {
                     onMouseEnter={e => e.currentTarget.style.background = "var(--hover-bg)"}
                     onMouseLeave={e => e.currentTarget.style.background = "none"}
                   >
-                    <span style={{ color: "var(--text-muted)", display: "flex" }}><item.Icon /></span>
+                    <span style={{ fontSize: 16 }}>{item.icon}</span>
                     {item.label}
                   </button>
                 ))}
@@ -190,7 +189,7 @@ export default function Header({ onMenuClick }) {
                   onMouseEnter={e => e.currentTarget.style.background = "#fee2e2"}
                   onMouseLeave={e => e.currentTarget.style.background = "none"}
                 >
-                  <span style={{ color: "#dc2626", display: "flex" }}><IconLogout /></span>
+                  <span style={{ fontSize: 16 }}>🚪</span>
                   Logout
                 </button>
               </div>
