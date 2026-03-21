@@ -208,6 +208,32 @@ export default function Announcements({ role }) {
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [courseFilter, setCourseFilter] = useState("ALL");
 
+  const [editModal, setEditModal]   = useState(null); // { item, courseId, annId, text }
+  const [deleteModal, setDeleteModal] = useState(null); // { item, courseId, annId }
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const handleDelete = async () => {
+    if (!deleteModal) return;
+    setActionLoading(true);
+    try {
+      await api.delete(`/professor/announcements/${deleteModal.courseId}/${deleteModal.annId}`);
+      setItems(prev => prev.filter(i => i.id !== deleteModal.item.id));
+      setDeleteModal(null);
+    } catch (e) { alert("Delete failed: " + (e.response?.data?.error || e.message)); }
+    finally { setActionLoading(false); }
+  };
+
+  const handleEdit = async () => {
+    if (!editModal) return;
+    setActionLoading(true);
+    try {
+      await api.patch(`/professor/announcements/${editModal.courseId}/${editModal.annId}`, { text: editModal.text });
+      setItems(prev => prev.map(i => i.id === editModal.item.id ? { ...i, text: editModal.text } : i));
+      setEditModal(null);
+    } catch (e) { alert("Edit failed: " + (e.response?.data?.error || e.message)); }
+    finally { setActionLoading(false); }
+  };
+
   // Use unified stream for students; legacy announcements for professors
   const isStudent = !role || role === "student";
   const streamEndpoint = isStudent ? "/classroom/stream" : "/professor/announcements";
@@ -350,10 +376,84 @@ export default function Announcements({ role }) {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {filtered.map((item, i) => (
-            <StreamCard key={item.id || i} item={item} index={i} />
-          ))}
+          {filtered.map((item, i) => {
+            // Extract real announcement ID (strip "ann-" prefix added for professor view)
+            // rawId: strip "ann-" prefix added during fetch normalization
+            const rawId = item.id?.startsWith("ann-") ? item.id.slice(4) : item.id;
+            // courseId: use item.courseId or fall back to parsing from id
+            const itemCourseId = item.courseId || null;
+            return (
+              <div key={item.id || i} style={{ position: "relative" }}>
+                <StreamCard item={item} index={i} />
+                {!isStudent && item.type === "ANNOUNCEMENT" && (
+                  <div style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 6, zIndex: 2 }}>
+                    <button
+                      onClick={() => setEditModal({ item, courseId: itemCourseId, annId: rawId, text: item.text || "" })}
+                      style={{ padding: "4px 10px", borderRadius: 7, border: "1px solid var(--card-border)", background: "var(--card-bg)", color: "var(--text-muted)", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                      ✏️ Edit
+                    </button>
+                    <button
+                      onClick={() => setDeleteModal({ item, courseId: itemCourseId, annId: rawId })}
+                      style={{ padding: "4px 10px", borderRadius: 7, border: "1px solid #fecaca", background: "#fff5f5", color: "#dc2626", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                      🗑️ Delete
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
+
+        {/* Edit Modal */}
+        {editModal && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <div style={{ background: "var(--card-bg)", borderRadius: 16, padding: 24, width: "100%", maxWidth: 520, boxShadow: "var(--shadow-xl)" }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>Edit Announcement</h3>
+              <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 16 }}>
+                {editModal.item.courseName}
+              </p>
+              <textarea
+                value={editModal.text}
+                onChange={e => setEditModal(m => ({ ...m, text: e.target.value }))}
+                rows={6}
+                style={{ width: "100%", border: "1.5px solid var(--card-border)", borderRadius: 10, padding: "10px 14px", fontSize: 14, resize: "vertical", outline: "none", lineHeight: 1.6, background: "var(--input-bg)", color: "var(--text-primary)", boxSizing: "border-box" }}
+              />
+              <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
+                <button onClick={() => setEditModal(null)} style={{ padding: "9px 18px", borderRadius: 9, border: "1px solid var(--card-border)", background: "transparent", color: "var(--text-muted)", fontSize: 13.5, cursor: "pointer" }}>
+                  Cancel
+                </button>
+                <button onClick={handleEdit} disabled={actionLoading || !editModal.text.trim()}
+                  style={{ padding: "9px 18px", borderRadius: 9, border: "none", background: "#16a34a", color: "#fff", fontSize: 13.5, fontWeight: 600, cursor: "pointer", opacity: actionLoading ? 0.6 : 1 }}>
+                  {actionLoading ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirm Modal */}
+        {deleteModal && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <div style={{ background: "var(--card-bg)", borderRadius: 16, padding: 24, width: "100%", maxWidth: 400, boxShadow: "var(--shadow-xl)" }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>Delete Announcement?</h3>
+              <p style={{ fontSize: 13.5, color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 20 }}>
+                This will permanently delete the announcement from Google Classroom. This cannot be undone.
+              </p>
+              <div style={{ background: "var(--bg-tertiary)", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: 13, color: "var(--text-secondary)", fontStyle: "italic", lineHeight: 1.5 }}>
+                "{deleteModal.item.text?.slice(0, 120)}{deleteModal.item.text?.length > 120 ? "…" : ""}"
+              </div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button onClick={() => setDeleteModal(null)} style={{ padding: "9px 18px", borderRadius: 9, border: "1px solid var(--card-border)", background: "transparent", color: "var(--text-muted)", fontSize: 13.5, cursor: "pointer" }}>
+                  Cancel
+                </button>
+                <button onClick={handleDelete} disabled={actionLoading}
+                  style={{ padding: "9px 18px", borderRadius: 9, border: "none", background: "#dc2626", color: "#fff", fontSize: 13.5, fontWeight: 600, cursor: "pointer", opacity: actionLoading ? 0.6 : 1 }}>
+                  {actionLoading ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       )}
 
       <style>{`
