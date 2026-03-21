@@ -19,7 +19,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.G
 // ── Vision helper: use Gemini when message has an image/file attached ──
 // Returns the model reply as a plain string.
 const askGeminiWithVision = async (systemPrompt, history, userMessage, fileData, fileType, fileName) => {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
   // Build a plain-text chat history for context (Gemini doesn't have system role)
   const contextLines = [
