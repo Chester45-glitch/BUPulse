@@ -20,8 +20,8 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.G
 // Returns the model reply as a plain string.
 const askGeminiWithVision = async (systemPrompt, history, userMessage, fileData, fileType, fileName) => {
   const model = genAI.getGenerativeModel(
-    { model: "gemini-1.5-flash" },
-    { apiVersion: "v1" }
+    { model: "gemini-2.5-flash-preview-04-17" },
+    { apiVersion: "v1beta" }
   );
 
   // Build a plain-text chat history for context (Gemini doesn't have system role)
