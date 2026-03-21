@@ -6,6 +6,8 @@ const {
   createAnnouncement, createAssignment, createSubmissionBin, createQuizAssignment,
 } = require("../services/googleClassroom");
 const { createForm } = require("../services/googleForms");
+const { extractFileContent } = require("../services/fileExtractor");
+const { generateQuestionsFromText, formatQuestionsPreview } = require("../services/quizGenerator");
 const supabase = require("../db/supabase");
 
 const router = express.Router();
@@ -239,9 +241,143 @@ const handleAction = async (action, user, fileUrl, fileName) => {
   return { reply: "⚠️ Unknown action.", result: null };
 };
 
+// ── File-based quiz handler ───────────────────────────────────────
+// Called when a professor attaches a file and asks to generate a quiz from it.
+// Uses pending quiz state stored in supabase to handle the confirm step.
+const handleFileQuiz = async (req, user, message, driveFileId, fileType, fileName, fileUrl) => {
+  const baseUrl = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 3000}`;
+
+  // Step 1: Check if this is a confirmation of a pending quiz draft
+  const isConfirm = /^(yes|confirm|post|go ahead|create it|post it|sure|ok|okay)/i.test(message?.trim() || "");
+
+  if (isConfirm) {
+    // Look for pending quiz draft in DB
+    const { data: draft } = await supabase
+      .from("quiz_drafts")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (draft && Date.now() - new Date(draft.created_at).getTime() < 30 * 60 * 1000) {
+      // Execute the saved draft
+      const action = draft.action_json;
+      const { reply } = await handleAction(action, user, null, null);
+      // Clean up draft
+      await supabase.from("quiz_drafts").delete().eq("id", draft.id);
+      return reply;
+    }
+  }
+
+  // Step 2: Extract file content
+  // Fetch cached file data from upload service
+  const token = req.headers.authorization;
+  let fileData, resolvedFileType, resolvedFileName;
+
+  try {
+    const cacheRes = await require("axios").get(
+      `${baseUrl}/api/upload/file-data/${driveFileId}`,
+      { headers: { Authorization: token } }
+    );
+    fileData          = cacheRes.data.fileData;
+    resolvedFileType  = cacheRes.data.fileType  || fileType;
+    resolvedFileName  = cacheRes.data.fileName  || fileName;
+  } catch {
+    // File not in cache — user uploaded it earlier but cache expired
+    throw new Error("File data expired. Please re-attach the file and try again.");
+  }
+
+  // Step 3: Extract text from file
+  const extracted = await extractFileContent(fileData, resolvedFileType, resolvedFileName);
+
+  // Step 4: Parse quiz parameters from message
+  const countMatch = message?.match(/(\d+)\s*(?:question|item|q)/i);
+  const questionCount = countMatch ? parseInt(countMatch[1]) : 10;
+
+  const hasShortAnswer = /short.?answer|open.?ended|essay/i.test(message || "");
+  const questionTypes  = hasShortAnswer ? ["RADIO", "SHORT_ANSWER"] : ["RADIO"];
+
+  const difficultyMatch = message?.match(/(easy|medium|hard|difficult)/i);
+  const difficulty = difficultyMatch ? difficultyMatch[1].toLowerCase() : "medium";
+
+  // Step 5: Get target class from message
+  const courses = await getTaughtCourses(user.access_token, user.refresh_token);
+  const courseMatch = courses.find(c =>
+    message && (
+      message.toLowerCase().includes(c.name.toLowerCase()) ||
+      message.includes(c.id)
+    )
+  );
+
+  // Step 6: Parse due date
+  const dateMatch = message?.match(/due\s+(.+?)(?:\s+at\s+|$)/i);
+  const rawDate = dateMatch?.[1]?.trim();
+
+  // Step 7: Generate questions using Claude
+  const questions = await generateQuestionsFromText(extracted.text, {
+    questionCount,
+    questionTypes,
+    difficulty,
+    topic: resolvedFileName?.replace(/\.[^.]+$/, "") || "",
+  });
+
+  // Step 8: Build draft action
+  const quizTitle = resolvedFileName
+    ? `Quiz: ${resolvedFileName.replace(/\.[^.]+$/, "")}`
+    : "Quiz";
+
+  const dueDate = rawDate
+    ? require("../services/googleClassroom").resolveDate
+      ? null // will be handled by parseDue
+      : rawDate
+    : null;
+
+  const action = {
+    action: "create_quiz",
+    courseId:    courseMatch?.id || null,
+    courseName:  courseMatch?.name || null,
+    title:       quizTitle,
+    description: `Generated from: ${resolvedFileName}${extracted.truncated ? " (first portion)" : ""}`,
+    dueDate:     rawDate || null,
+    dueTime:     "23:59",
+    points:      questionCount,
+    questions,
+  };
+
+  // Step 9: Save draft for confirmation
+  if (courseMatch) {
+    await supabase.from("quiz_drafts").upsert({
+      user_id:     user.id,
+      action_json: action,
+      created_at:  new Date().toISOString(),
+    }, { onConflict: "user_id" });
+  }
+
+  // Step 10: Build preview reply
+  const preview = formatQuestionsPreview(questions);
+  const classLine = courseMatch
+    ? `📚 Class: ${courseMatch.name}`
+    : `⚠️ Class not found in message — which class should I post this to?`;
+  const dateLine  = rawDate ? `📅 Due: ${rawDate}` : `📅 Due: not set — please specify`;
+  const methodNote = extracted.method === "vision" ? " _(read via AI vision)_" : "";
+
+  return `📄 I read **${resolvedFileName}**${methodNote} and generated ${questions.length} questions.
+
+${classLine}
+${dateLine}
+
+**Questions preview:**
+\`\`\`
+${preview}
+\`\`\`
+
+${courseMatch ? "Should I create this quiz and post it to Classroom?" : "Please tell me which class to post this to."}`;
+};
+
 // ── POST /api/chatbot/message ─────────────────────────────────────
 router.post("/message", authenticateToken, async (req, res) => {
-  const { message, fileUrl, fileName } = req.body;
+  const { message, fileUrl, fileName, fileType, driveFileId } = req.body;
   if (!message?.trim() && !fileUrl) return res.status(400).json({ error: "Message required" });
 
   try {
@@ -255,6 +391,24 @@ router.post("/message", authenticateToken, async (req, res) => {
       file_url: fileUrl || null, file_name: fileName || null,
     });
 
+    // ── FILE-BASED QUIZ GENERATION (professors only) ───────────────
+    const isQuizFromFile = user.role === "professor" && driveFileId &&
+      /quiz|form|question|generate|create.*from|based on|convert/i.test(message || "");
+
+    if (isQuizFromFile) {
+      try {
+        const reply = await handleFileQuiz(req, user, message, driveFileId, fileType, fileName, fileUrl);
+        await supabase.from("chat_messages").insert({ user_id: req.user.id, role: "assistant", content: reply });
+        return res.json({ message: reply, timestamp: new Date().toISOString() });
+      } catch (err) {
+        console.error("File quiz error:", err.message);
+        const errReply = `⚠️ I couldn't read the file: ${err.message}`;
+        await supabase.from("chat_messages").insert({ user_id: req.user.id, role: "assistant", content: errReply });
+        return res.json({ message: errReply, timestamp: new Date().toISOString() });
+      }
+    }
+
+    // ── NORMAL GROQ FLOW ───────────────────────────────────────────
     const { data: history } = await supabase
       .from("chat_messages").select("role, content")
       .eq("user_id", req.user.id).order("created_at", { ascending: true }).limit(20);
@@ -271,7 +425,7 @@ router.post("/message", authenticateToken, async (req, res) => {
       max_tokens: 1500, temperature: 0.7,
     });
 
-    let reply       = result.choices[0]?.message?.content || "Sorry, I couldn't process that. Try again!";
+    let reply = result.choices[0]?.message?.content || "Sorry, I couldn't process that. Try again!";
     let actionResult = null;
 
     if (user.role === "professor") {
@@ -295,6 +449,7 @@ router.post("/message", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "PulsBot is temporarily unavailable." });
   }
 });
+
 
 // ── GET /api/chatbot/history ──────────────────────────────────────
 router.get("/history", authenticateToken, async (req, res) => {
