@@ -384,9 +384,11 @@ router.post("/message", authenticateToken, async (req, res) => {
     // Store driveFileId whenever a file is uploaded so we can use it
     // on the NEXT message even if driveFileId isn't in that message.
     if (driveFileId && user.role === "professor") {
-      await supabase.from("users")
+      // Persist file ref for follow-up messages (column may not exist yet — non-fatal)
+      supabase.from("users")
         .update({ last_quiz_file: JSON.stringify({ driveFileId, fileType, fileName }) })
-        .eq("id", req.user.id);
+        .eq("id", req.user.id)
+        .then(() => {}).catch(() => {});
     }
 
     // Quiz intent: explicit keywords OR professor just uploaded a file with no message
@@ -426,16 +428,16 @@ router.post("/message", authenticateToken, async (req, res) => {
     let effectiveFileName    = fileName;
 
     if (!effectiveDriveFileId && hasQuizIntent && user.role === "professor") {
-      const { data: userData } = await supabase
-        .from("users").select("last_quiz_file").eq("id", req.user.id).single();
-      if (userData?.last_quiz_file) {
-        try {
+      try {
+        const { data: userData } = await supabase
+          .from("users").select("last_quiz_file").eq("id", req.user.id).single();
+        if (userData?.last_quiz_file) {
           const last = JSON.parse(userData.last_quiz_file);
           effectiveDriveFileId = last.driveFileId;
           effectiveFileType    = last.fileType;
           effectiveFileName    = last.fileName;
-        } catch {}
-      }
+        }
+      } catch {} // column may not exist yet — frontend ref handles this
     }
 
     const isQuizFromFile = user.role === "professor" && effectiveDriveFileId && hasQuizIntent;
