@@ -23,7 +23,7 @@ router.get("/", authenticateToken, async (req, res) => {
 // ── POST /api/schedule ────────────────────────────────────────────
 // Create a single schedule entry manually
 router.post("/", authenticateToken, async (req, res) => {
-  const { course_name, course_code, day_of_week, start_time, end_time, room, color } = req.body;
+  const { course_name, course_code, day_of_week, start_time, end_time, room, color, professor } = req.body;
   if (!course_name || !day_of_week || !start_time || !end_time) {
     return res.status(400).json({ error: "course_name, day_of_week, start_time, end_time are required" });
   }
@@ -33,7 +33,7 @@ router.post("/", authenticateToken, async (req, res) => {
     .insert({
       user_id: req.user.id,
       course_name, course_code, day_of_week, start_time, end_time,
-      room, color: color || "#16a34a", source: "manual",
+      room, professor: professor || null, color: color || "#16a34a", source: "manual",
     })
     .select()
     .single();
@@ -90,27 +90,37 @@ router.post("/extract", authenticateToken, async (req, res) => {
 
   if (!extractedText) return res.status(400).json({ error: "No readable content found in file." });
 
-  const prompt = `Extract the class schedule from this text. Return ONLY a valid JSON array.
+  const prompt = `You are extracting a class schedule from text. Read it VERY carefully.
 
-Each item must have:
+CRITICAL RULES:
+- Each class may appear on DIFFERENT days (Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday)
+- Do NOT assume all classes are on the same day
+- The day column in a table or the label before a class block tells you which day it is
+- If a class meets on multiple days (e.g. MWF or TTh), create a SEPARATE entry for EACH day
+- Look for day abbreviations: M=Monday, T=Tuesday, W=Wednesday, Th=Thursday, F=Friday, S=Saturday, Su=Sunday
+- Also look for: MTh, MWF, TTh, MWThF patterns — split each into individual days
+- professor (string or null): instructor/professor name if present
+- Read ALL rows/blocks carefully, not just the first one
+
+Return ONLY a valid JSON array where each item has:
 - course_name (string): full course name
-- course_code (string or null): course code if present (e.g. "CS101")
-- day_of_week (string): one of: Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday
+- course_code (string or null): course code if present
+- day_of_week (string): EXACTLY one of: Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday
 - start_time (string): 24-hour format e.g. "08:00"
 - end_time (string): 24-hour format e.g. "10:00"
 - room (string or null): room/location if present
+- professor (string or null): professor/instructor name if present
 
-If a class meets multiple days, create one entry per day.
-Return ONLY the JSON array, no explanation, no markdown.
+Return ONLY the JSON array, no explanation, no markdown, no extra text.
 
-TEXT:
-${extractedText.slice(0, 6000)}`;
+SCHEDULE TEXT:
+${extractedText.slice(0, 8000)}`;
 
   try {
     const result = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: prompt }],
-      max_tokens: 2000,
+      max_tokens: 4000,
       temperature: 0.1,
     });
 
@@ -147,6 +157,7 @@ router.post("/bulk", authenticateToken, async (req, res) => {
     start_time:  e.start_time,
     end_time:    e.end_time,
     room:        e.room || null,
+    professor:   e.professor || null,
     color:       e.color || "#16a34a",
     source:      e.source || "upload",
   }));
