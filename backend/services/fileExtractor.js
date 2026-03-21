@@ -14,27 +14,49 @@ try { mammoth      = require("mammoth");      } catch {}
 try { officeParser = require("officeparser"); } catch {}
 
 // ── Gemini Vision — reads images and scanned PDFs ─────────────────
+// Tries multiple model IDs in order until one works (free tier model names change frequently)
+const GEMINI_MODELS = [
+  "gemini-2.5-flash-preview-04-17",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-001",
+];
+
 const extractWithGemini = async (base64Data, mimeType, hint = "") => {
-  if (!genAI._options?.apiKey && !process.env.GEMINI_API_KEY && !process.env.GOOGLE_AI_KEY) {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_KEY;
+  if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not set. Add it to your Render environment variables.");
   }
 
-  const model = genAI.getGenerativeModel(
-    { model: "gemini-2.5-flash-preview-04-17" },
-    { apiVersion: "v1beta" }
-  );
+  const prompt = `Extract ALL readable text from this ${hint || "file"} exactly as it appears. Include every heading, paragraph, bullet point, table cell, caption, and label. Do not summarize — output the complete raw text content only.`;
 
-  const result = await model.generateContent([
-    {
-      inlineData: {
-        mimeType: mimeType.startsWith("image/") ? mimeType : "image/jpeg",
-        data: base64Data,
-      },
-    },
-    `Extract ALL readable text from this ${hint || "file"} exactly as it appears. Include every heading, paragraph, bullet point, table cell, caption, and label. Do not summarize — output the complete raw text content only.`,
-  ]);
+  const inlineData = {
+    mimeType: mimeType.startsWith("image/") ? mimeType : "image/jpeg",
+    data: base64Data,
+  };
 
-  return result.response.text() || "";
+  let lastError;
+  for (const modelName of GEMINI_MODELS) {
+    try {
+      const model = genAI.getGenerativeModel(
+        { model: modelName },
+        { apiVersion: "v1beta" }
+      );
+      const result = await model.generateContent([{ inlineData }, prompt]);
+      console.log(`Gemini vision: using model ${modelName}`);
+      return result.response.text() || "";
+    } catch (err) {
+      // 404 = model not available, try next; anything else = real error, stop
+      if (err.message?.includes("404") || err.message?.includes("not found")) {
+        lastError = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`No working Gemini model found. Last error: ${lastError?.message}`);
 };
 
 // ── PDF extraction ─────────────────────────────────────────────────
