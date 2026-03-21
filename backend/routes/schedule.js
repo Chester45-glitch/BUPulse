@@ -71,15 +71,89 @@ router.delete("/:id", authenticateToken, async (req, res) => {
 });
 
 // ── POST /api/schedule/extract ────────────────────────────────────
-// Extract schedule from uploaded file using Groq AI
+// Extract schedule from uploaded file using AI
 // Body: { fileData (base64), fileType, fileName } OR { text, fileName } (legacy)
 router.post("/extract", authenticateToken, async (req, res) => {
   const { text, fileName, fileData, fileType } = req.body;
 
-  let extractedText = text?.trim() || "";
+  // ── If it's an image, send directly to Gemini for structured parsing ──
+  // This preserves the table layout which is critical for correct day detection.
+  // Text extraction (Gemini OCR → Groq parse) loses the column structure.
+  if (fileData && fileType?.startsWith("image/")) {
+    try {
+      const { GoogleGenerativeAI } = require("@google/generative-ai");
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_KEY || "");
 
-  // If fileData provided, run it through the file extractor first (handles PDF, PPTX, DOCX, images)
-  if (fileData && fileType) {
+      const imagePrompt = `You are reading a class schedule image. Extract every class entry as a JSON array.
+
+CRITICAL: Look at the COLUMN HEADERS carefully. The schedule has separate columns for each day (Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday). Each class block appears under its correct day column — do NOT assign them all to Monday.
+
+Each item in the array must have:
+- course_name (string): full course name
+- course_code (string or null): course code e.g. "CS101"  
+- day_of_week (string): EXACTLY the day column this class appears under — one of: Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday
+- start_time (string): 24-hour format e.g. "08:00"
+- end_time (string): 24-hour format e.g. "10:00"
+- room (string or null): room/location
+- professor (string or null): professor/instructor name
+
+Return ONLY a valid JSON array. No markdown, no explanation, no extra text.`;
+
+      const GEMINI_MODELS = [
+        "gemini-2.5-flash-preview-04-17",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash-001",
+      ];
+
+      let entries = null;
+      let lastError;
+
+      for (const modelName of GEMINI_MODELS) {
+        try {
+          const model = genAI.getGenerativeModel({ model: modelName }, { apiVersion: "v1beta" });
+          const result = await model.generateContent([
+            { inlineData: { mimeType: fileType, data: fileData } },
+            imagePrompt,
+          ]);
+          const raw = result.response.text()?.trim() || "";
+          const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+          entries = JSON.parse(cleaned);
+          if (!Array.isArray(entries)) throw new Error("Not array");
+          console.log(`Schedule image parsed by Gemini model: ${modelName}, found ${entries.length} entries`);
+          break;
+        } catch (err) {
+          if (err.message?.includes("404") || err.message?.includes("not found")) {
+            lastError = err; continue;
+          }
+          // JSON parse error — try to extract array
+          if (err instanceof SyntaxError) {
+            try {
+              const model = genAI.getGenerativeModel({ model: GEMINI_MODELS[0] }, { apiVersion: "v1beta" });
+              const result = await model.generateContent([
+                { inlineData: { mimeType: fileType, data: fileData } },
+                imagePrompt,
+              ]);
+              const raw = result.response.text()?.trim() || "";
+              const arr = raw.match(/\[[\s\S]*\]/);
+              if (arr) { entries = JSON.parse(arr[0]); break; }
+            } catch {}
+          }
+          lastError = err;
+        }
+      }
+
+      if (!entries) throw new Error(`Gemini could not parse schedule: ${lastError?.message}`);
+      return res.json({ entries, count: entries.length });
+    } catch (err) {
+      return res.status(400).json({ error: `Could not read schedule image: ${err.message}` });
+    }
+  }
+
+  // ── Non-image files (PDF, DOCX, etc): extract text first then parse ──
+  let extractedText = text?.trim() || "";
+  if (fileData && fileType && !fileType.startsWith("image/")) {
     try {
       const extracted = await extractFileContent(fileData, fileType, fileName);
       extractedText = extracted.text;
@@ -99,7 +173,6 @@ CRITICAL RULES:
 - If a class meets on multiple days (e.g. MWF or TTh), create a SEPARATE entry for EACH day
 - Look for day abbreviations: M=Monday, T=Tuesday, W=Wednesday, Th=Thursday, F=Friday, S=Saturday, Su=Sunday
 - Also look for: MTh, MWF, TTh, MWThF patterns — split each into individual days
-- professor (string or null): instructor/professor name if present
 - Read ALL rows/blocks carefully, not just the first one
 
 Return ONLY a valid JSON array where each item has:
