@@ -474,6 +474,25 @@ const createQuizAssignment = async (courseId, options, accessToken, refreshToken
   }
 };
 
+// ── Delete announcement ───────────────────────────────────────────
+const deleteAnnouncement = async (courseId, announcementId, accessToken, refreshToken) => {
+  const classroom = createClient(accessToken, refreshToken);
+  await classroom.courses.announcements.delete({ courseId, id: announcementId });
+  return { success: true };
+};
+
+// ── Edit (patch) announcement ─────────────────────────────────────
+const editAnnouncement = async (courseId, announcementId, newText, accessToken, refreshToken) => {
+  const classroom = createClient(accessToken, refreshToken);
+  const res = await classroom.courses.announcements.patch({
+    courseId,
+    id:         announcementId,
+    updateMask: "text",
+    requestBody: { text: newText },
+  });
+  return res.data;
+};
+
 module.exports = {
   getCourses,
   getTaughtCourses,
@@ -489,6 +508,8 @@ module.exports = {
   createAssignment,
   createSubmissionBin,
   createQuizAssignment,
+  deleteAnnouncement,
+  editAnnouncement,
   normalizeMaterials,
 };
 
