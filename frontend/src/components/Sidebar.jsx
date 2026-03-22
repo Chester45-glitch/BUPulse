@@ -155,7 +155,7 @@ function NavItem({ to, Icon, label, end, expanded, accent, onClick }) {
 
           <span style={{
             fontSize: 14, fontWeight: isActive ? 600 : 400,
-            opacity: expanded ? 1 : 0,
+            opacity: isExpanded ? 1 : 0,
             transition: "opacity 0.18s ease",
             whiteSpace: "nowrap",
           }}>{label}</span>
@@ -177,6 +177,9 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
 
   const onEnter = useCallback(() => { clearTimeout(timer.current); setExpanded(true); }, []);
   const onLeave = useCallback(() => { timer.current = setTimeout(() => { setExpanded(false); setSwitcherOpen(false); }, 300); }, []);
+
+  // On mobile, when the sidebar is opened via hamburger, force expanded so labels show
+  const isExpanded = expanded || isOpen;
 
   const navItems = NAV_ITEMS[role] || NAV_ITEMS.student;
   const accent   = ROLE_ACCENT[role] || ROLE_ACCENT.student;
@@ -202,7 +205,7 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
           </div>
 
           {/* Brand + role */}
-          <div style={{ opacity: expanded ? 1 : 0, transform: expanded ? "translateX(0)" : "translateX(-8px)", transition: "all 0.18s ease", flex: 1, minWidth: 0, overflow: "hidden" }}>
+          <div style={{ opacity: isExpanded ? 1 : 0, transform: isExpanded ? "translateX(0)" : "translateX(-8px)", transition: "all 0.18s ease", flex: 1, minWidth: 0, overflow: "hidden" }}>
             <span className="bupulse-brand-text" style={{ fontSize: 17, fontFamily: "var(--font-display, serif)", fontWeight: 700, display: "block", lineHeight: 1.2 }}>BUPulse</span>
             <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.7px", color: accent }}>{role}</span>
           </div>
@@ -218,7 +221,7 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
                 border: "none", cursor: "pointer", padding: 0, flexShrink: 0,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 color: "rgba(255,255,255,0.5)", transition: "all 0.14s",
-                opacity: expanded ? 1 : 0,
+                opacity: isExpanded ? 1 : 0,
               }}
               onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.12)"}
               onMouseLeave={e => { if (!switcherOpen) e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
@@ -239,7 +242,7 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
               key={item.to}
               {...item}
               end={item.to === "/professor" || item.to === "/parent"}
-              expanded={expanded}
+              expanded={isExpanded}
               accent={accent}
               onClick={onClose}
             />
@@ -265,13 +268,13 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
             <div style={{ width: 44, height: 44, borderRadius: 12, background: "rgba(220,38,38,0.06)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <Icons.logout />
             </div>
-            <span style={{ fontSize: 14, whiteSpace: "nowrap", opacity: expanded ? 1 : 0, transition: "opacity 0.18s" }}>Sign out</span>
+            <span style={{ fontSize: 14, whiteSpace: "nowrap", opacity: isExpanded ? 1 : 0, transition: "opacity 0.18s" }}>Sign out</span>
           </button>
 
           {/* User chip */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px 0", borderTop: "1px solid rgba(255,255,255,0.06)", marginTop: 4, overflow: "hidden" }}>
             <Avatar user={user} size={36} accent={accent} />
-            <div style={{ opacity: expanded ? 1 : 0, transition: "opacity 0.18s", minWidth: 0 }}>
+            <div style={{ opacity: isExpanded ? 1 : 0, transition: "opacity 0.18s", minWidth: 0 }}>
               <p style={{ color: "#fff", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.name || "User"}</p>
               <p style={{ color: "rgba(255,255,255,0.38)", fontSize: 10, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.email}</p>
             </div>
