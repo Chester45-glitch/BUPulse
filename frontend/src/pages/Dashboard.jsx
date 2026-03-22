@@ -146,10 +146,10 @@ export default function Dashboard() {
       {/* ── Stats row ── */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginBottom:16 }} className="stats-grid">
         {[
-          { label:"Classes",       value:stats.totalCourses??0,      sub:"Enrolled",       path:"/enrolled-classes",   icon:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',  red:false },
-          { label:"Pending",       value:pendingCount,               sub:"Due soon",        path:"/pending-activities", icon:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',                                                     red:false },
-          { label:"Announcements", value:stats.newAnnouncements??0,  sub:"Last 48h",        path:"/announcements",      icon:'<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',                             red:false },
-          { label:"Overdue",       value:overdueCount,               sub:"Needs attention", path:"/pending-activities", icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',        red:true  },
+          { label:"Classes",       value:stats.totalCourses??0,      sub:"Enrolled",       path:"/enrolled-classes",   color:"#16a34a", icon:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',  red:false },
+          { label:"Pending",       value:pendingCount,               sub:"Due soon",        path:"/pending-activities", color:"#d97706", icon:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',                                                     red:false },
+          { label:"Announcements", value:stats.newAnnouncements??0,  sub:"Last 48h",        path:"/announcements",      color:"#2563eb", icon:'<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',                             red:false },
+          { label:"Overdue",       value:overdueCount,               sub:"Needs attention", path:"/pending-activities", color:"#dc2626", icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',        red:true  },
         ].map(s => (
           <div key={s.label} onClick={() => navigate(s.path)} style={{
             background:"var(--card-bg)", borderRadius:14,
@@ -159,11 +159,11 @@ export default function Dashboard() {
           }}
             onMouseEnter={e => { e.currentTarget.style.transform="translateY(-2px)"; e.currentTarget.style.boxShadow="var(--shadow-md)"; }}
             onMouseLeave={e => { e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow="none"; }}>
-            {/* Top accent bar — red for overdue, grey for others */}
-            <div style={{ position:"absolute", top:0, left:0, right:0, height:3, background: s.red && s.value > 0 ? "#dc2626" : "var(--border-color)", borderRadius:"14px 14px 0 0" }}/>
+            {/* Color top bar */}
+            <div style={{ position:"absolute", top:0, left:0, right:0, height:3, background: (s.red && s.value > 0) ? "#dc2626" : s.color, borderRadius:"14px 14px 0 0", opacity: s.red && s.value === 0 ? 0.25 : 0.9 }}/>
             <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:10, marginTop:4 }}>
               <span style={{ fontSize:11, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.4px" }}>{s.label}</span>
-              <div style={{ width:28, height:28, borderRadius:8, background:"var(--bg-tertiary)", display:"flex", alignItems:"center", justifyContent:"center", color: s.red && s.value > 0 ? "#dc2626" : "var(--text-muted)" }}>
+              <div style={{ width:28, height:28, borderRadius:8, background: s.color + "15", display:"flex", alignItems:"center", justifyContent:"center", color: s.red && s.value > 0 ? "#dc2626" : s.color }}>
                 <Ico path={s.icon} size={15}/>
               </div>
             </div>

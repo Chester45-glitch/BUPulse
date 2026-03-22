@@ -619,7 +619,7 @@ export default function Schedule() {
                         height: height,
                         background: c.color,
                         borderRadius:6,
-                        overflow:"hidden",
+                        overflow:"visible",
                         zIndex:3,
                         boxShadow:"0 1px 4px rgba(0,0,0,0.15)",
                         cursor:"pointer",
@@ -628,9 +628,9 @@ export default function Schedule() {
                         onClick={() => { setEditEntry(c); setShowModal(true); }}
                         onMouseEnter={e=>e.currentTarget.style.filter="brightness(1.1)"}
                         onMouseLeave={e=>e.currentTarget.style.filter="none"}
-                        title={`${c.course_name}\n${fmtTime(c.start_time)} – ${fmtTime(c.end_time)}${c.room?"\n📍 "+c.room:""}${c.professor?"\n👤 "+c.professor:""}`}
+                        title={`${c.course_name}\n${fmtTime(c.start_time)} – ${fmtTime(c.end_time)}${c.room?"\n"+c.room:""}${c.professor?"\n"+c.professor:""}`}
                       >
-                        <div style={{padding: isShort ? "2px 5px" : "4px 6px", height:"100%", boxSizing:"border-box", display:"flex", flexDirection:"column", justifyContent:"flex-start"}}>
+                        <div style={{padding: isShort ? "2px 5px" : "4px 6px", height:"100%", boxSizing:"border-box", display:"flex", flexDirection:"column", justifyContent:"flex-start", overflow:"hidden", borderRadius:6}}>
                           <div style={{fontSize: isShort ? 9.5 : 10.5, fontWeight:700, color:"#fff", lineHeight:1.25, overflow:"hidden", textOverflow:"ellipsis", whiteSpace: isShort ? "nowrap" : "normal"}}>
                             {c.course_name}
                           </div>
@@ -640,20 +640,25 @@ export default function Schedule() {
                                 {fmtTime(c.start_time)} – {fmtTime(c.end_time)}
                               </div>
                               {c.room && height >= 70 && (
-                                <div style={{fontSize:9,color:"rgba(255,255,255,0.75)",marginTop:1}}>📍 {c.room}</div>
+                                <div style={{fontSize:9,color:"rgba(255,255,255,0.75)",marginTop:1}}>{c.room}</div>
                               )}
                               {c.professor && height >= 90 && (
-                                <div style={{fontSize:9,color:"rgba(255,255,255,0.75)",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>👤 {c.professor}</div>
+                                <div style={{fontSize:9,color:"rgba(255,255,255,0.75)",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.professor}</div>
                               )}
                             </>
                           )}
                         </div>
-                        {/* Delete button on hover */}
+                        {/* Delete button — always visible, positioned outside overflow */}
                         <button
                           onClick={e=>{e.stopPropagation();handleDelete(c.id);}}
-                          style={{position:"absolute",top:2,right:2,width:16,height:16,borderRadius:3,background:"rgba(0,0,0,0.25)",border:"none",color:"#fff",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.12s"}}
-                          onMouseEnter={e=>e.currentTarget.style.opacity="1"}
-                          onMouseLeave={e=>e.currentTarget.style.opacity="0"}
+                          style={{
+                            position:"absolute", top:-6, right:-6,
+                            width:18, height:18, borderRadius:"50%",
+                            background:"#dc2626", border:"2px solid #fff",
+                            color:"#fff", fontSize:10, cursor:"pointer",
+                            display:"flex", alignItems:"center", justifyContent:"center",
+                            zIndex:10, lineHeight:1, fontWeight:700,
+                          }}
                         >✕</button>
                       </div>
                     );
@@ -697,16 +702,23 @@ export default function Schedule() {
         <div style={{background:todayClasses.length>0?"var(--green-700)":"var(--bg-tertiary)",borderRadius:12,padding:"12px 16px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
           <div>
             <div style={{fontSize:11,fontWeight:700,color:todayClasses.length>0?"rgba(255,255,255,0.7)":"var(--text-muted)",marginBottom:2}}>{todayName} — Today</div>
-            <div style={{fontSize:14,fontWeight:700,color:todayClasses.length>0?"#fff":"var(--text-secondary)"}}>
-              {todayClasses.length===0?"🎉 No classes today":`${todayClasses.length} class${todayClasses.length!==1?"es":""} today`}
+            <div style={{fontSize:14,fontWeight:700,color:todayClasses.length>0?"#fff":"var(--text-secondary)",display:"flex",alignItems:"center",gap:6}}>
+              {todayClasses.length===0 ? (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  No classes today
+                </>
+              ) : `${todayClasses.length} class${todayClasses.length!==1?"es":""} today`}
             </div>
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {currentClass&&(
               <div style={{background:"rgba(255,255,255,0.18)",borderRadius:9,padding:"6px 12px"}}>
-                <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",fontWeight:700,marginBottom:1}}>🟢 NOW</div>
+                <div style={{fontSize:9.5,color:"rgba(255,255,255,0.7)",fontWeight:700,marginBottom:1,display:"flex",alignItems:"center",gap:4}}>
+                  <div style={{width:6,height:6,borderRadius:"50%",background:"#4ade80"}}/>NOW
+                </div>
                 <div style={{fontSize:12,color:"#fff",fontWeight:700}}>{currentClass.course_name}</div>
-                {currentClass.room&&<div style={{fontSize:10,color:"rgba(255,255,255,0.75)"}}>📍 {currentClass.room}</div>}
+                {currentClass.room&&<div style={{fontSize:10,color:"rgba(255,255,255,0.75)"}}>{currentClass.room}</div>}
               </div>
             )}
             {nextClass&&(
@@ -773,9 +785,12 @@ export default function Schedule() {
         <>
           {/* View tabs */}
           <div style={{display:"flex",gap:4,marginBottom:14,background:"var(--bg-tertiary)",borderRadius:10,padding:4,width:"fit-content"}}>
-            {[["calendar","📅 Calendar"],["week","🗓 Weekly"]].map(([t,label])=>(
-              <button key={t} onClick={()=>setTab(t)} style={{padding:"6px 14px",borderRadius:8,fontSize:13,fontWeight:500,cursor:"pointer",background:tab===t?"var(--card-bg)":"transparent",color:tab===t?"var(--text-primary)":"var(--text-muted)",border:"none",boxShadow:tab===t?"var(--shadow-sm)":"none",transition:"all 0.15s"}}>
-                {label}
+            {[
+              ["calendar", <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>, "Calendar"],
+              ["week",     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="14" x2="21" y2="14"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/></svg>, "Weekly"],
+            ].map(([t,icon,label])=>(
+              <button key={t} onClick={()=>setTab(t)} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 14px",borderRadius:8,fontSize:13,fontWeight:500,cursor:"pointer",background:tab===t?"var(--card-bg)":"transparent",color:tab===t?"var(--text-primary)":"var(--text-muted)",border:"none",boxShadow:tab===t?"var(--shadow-sm)":"none",transition:"all 0.15s"}}>
+                {icon} {label}
               </button>
             ))}
           </div>
@@ -800,7 +815,6 @@ export default function Schedule() {
         @keyframes pulse-bg { 0%,100%{opacity:1}50%{opacity:0.5} }
         @media (max-width: 600px) {
           .activities-panel { grid-template-columns: 1fr !important; }
-          .schedule-week-grid { min-width: 700px; }
         }
       `}</style>
     </div>
