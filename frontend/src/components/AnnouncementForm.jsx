@@ -183,19 +183,83 @@ export default function AnnouncementForm({ courses = [], onSuccess }) {
             <ClassSelector courses={courses} selectedIds={selectedIds} onChange={setSelectedIds} />
           )}
 
-          {/* Text area */}
+          {/* Rich Text Editor */}
           <div>
             <label style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>Announcement *</label>
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Announce something to your class…"
-              rows={5}
-              style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: "1.5px solid var(--input-border)", background: "var(--input-bg)", color: "var(--text-primary)", fontSize: 14, resize: "vertical", outline: "none", fontFamily: "var(--font-body)", lineHeight: 1.65, transition: "border-color 0.15s" }}
-              onFocus={(e) => (e.target.style.borderColor = "#16a34a")}
-              onBlur={(e) => (e.target.style.borderColor = "var(--input-border)")}
-            />
-            <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "right", marginTop: 3 }}>{text.length} chars</div>
+            <div style={{ border: "1.5px solid var(--input-border)", borderRadius: 10, overflow: "hidden", transition: "border-color 0.15s" }}
+              onFocusCapture={e => e.currentTarget.style.borderColor = "#16a34a"}
+              onBlurCapture={e => e.currentTarget.style.borderColor = "var(--input-border)"}
+            >
+              {/* Formatting toolbar */}
+              <div style={{ display: "flex", gap: 2, padding: "6px 8px", borderBottom: "1px solid var(--border-color)", background: "var(--bg-tertiary)", flexWrap: "wrap" }}>
+                {[
+                  { cmd: "bold",          icon: <b style={{fontSize:13}}>B</b>,           title: "Bold" },
+                  { cmd: "italic",        icon: <i style={{fontSize:13}}>I</i>,           title: "Italic" },
+                  { cmd: "underline",     icon: <u style={{fontSize:13}}>U</u>,           title: "Underline" },
+                  { cmd: "strikeThrough", icon: <s style={{fontSize:12}}>S</s>,           title: "Strikethrough" },
+                ].map(({cmd,icon,title}) => (
+                  <button key={cmd} type="button" title={title}
+                    onMouseDown={e => { e.preventDefault(); document.execCommand(cmd, false); }}
+                    style={{ width:28, height:28, border:"1px solid var(--border-color)", borderRadius:5, background:"var(--card-bg)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:"var(--text-secondary)" }}>
+                    {icon}
+                  </button>
+                ))}
+                <div style={{ width:1, background:"var(--border-color)", margin:"0 4px" }}/>
+                {[
+                  { cmd: "insertUnorderedList", icon: "• ≡", title: "Bullet list" },
+                  { cmd: "insertOrderedList",   icon: "1≡", title: "Numbered list" },
+                ].map(({cmd,icon,title}) => (
+                  <button key={cmd} type="button" title={title}
+                    onMouseDown={e => { e.preventDefault(); document.execCommand(cmd, false); }}
+                    style={{ height:28, padding:"0 8px", border:"1px solid var(--border-color)", borderRadius:5, background:"var(--card-bg)", cursor:"pointer", fontSize:12, color:"var(--text-secondary)", fontWeight:600 }}>
+                    {icon}
+                  </button>
+                ))}
+                <div style={{ width:1, background:"var(--border-color)", margin:"0 4px" }}/>
+                {[
+                  { cmd: "justifyLeft",   icon: "⬛▬▬", title: "Align left" },
+                  { cmd: "justifyCenter", icon: "▬⬛▬", title: "Center" },
+                  { cmd: "justifyRight",  icon: "▬▬⬛", title: "Align right" },
+                ].map(({cmd,icon,title}) => (
+                  <button key={cmd} type="button" title={title}
+                    onMouseDown={e => { e.preventDefault(); document.execCommand(cmd, false); }}
+                    style={{ width:28, height:28, border:"1px solid var(--border-color)", borderRadius:5, background:"var(--card-bg)", cursor:"pointer", fontSize:10, color:"var(--text-secondary)" }}>
+                    {icon}
+                  </button>
+                ))}
+                <div style={{ width:1, background:"var(--border-color)", margin:"0 4px" }}/>
+                <select defaultValue="" title="Heading" onChange={e => { if(e.target.value) document.execCommand("formatBlock", false, e.target.value); e.target.value=""; }}
+                  style={{ height:28, padding:"0 6px", border:"1px solid var(--border-color)", borderRadius:5, background:"var(--card-bg)", cursor:"pointer", fontSize:12, color:"var(--text-secondary)", outline:"none" }}>
+                  <option value="">Text</option>
+                  <option value="h1">Heading 1</option>
+                  <option value="h2">Heading 2</option>
+                  <option value="h3">Heading 3</option>
+                  <option value="p">Paragraph</option>
+                </select>
+                <div style={{ marginLeft:"auto", fontSize:11, color:"var(--text-muted)", alignSelf:"center", paddingRight:4 }}>{text.length} chars</div>
+              </div>
+              {/* Editable content area */}
+              <div
+                contentEditable
+                suppressContentEditableWarning
+                onInput={e => setText(e.currentTarget.innerHTML)}
+                data-placeholder="Announce something to your class…"
+                style={{
+                  minHeight: 120, padding: "12px 14px",
+                  background: "var(--input-bg)", color: "var(--text-primary)",
+                  fontSize: 14, lineHeight: 1.7, outline: "none",
+                  fontFamily: "var(--font-body)",
+                }}
+              />
+            </div>
+            <style>{`
+              [contenteditable]:empty:before { content: attr(data-placeholder); color: var(--text-faint); pointer-events: none; }
+              [contenteditable] ul { padding-left: 20px; list-style: disc; }
+              [contenteditable] ol { padding-left: 20px; list-style: decimal; }
+              [contenteditable] h1 { font-size: 1.5em; font-weight: 700; margin: 4px 0; }
+              [contenteditable] h2 { font-size: 1.3em; font-weight: 700; margin: 4px 0; }
+              [contenteditable] h3 { font-size: 1.1em; font-weight: 600; margin: 4px 0; }
+            `}</style>
           </div>
 
           {/* File drop zone */}
