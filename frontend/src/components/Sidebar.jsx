@@ -195,15 +195,15 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
         style={{ "--accent": accent }}
       >
         {/* ── Logo + account switcher ───────────────────── */}
-        <div style={{ padding: "16px 8px 8px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 10, overflow: "hidden", position: "relative" }}>
-          {/* Logo icon */}
-          <div style={{ width: 44, height: 44, borderRadius: 12, overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent" }}>
-            <img src="/Logo.png" alt="BUPulse" style={{ width: 44, height: 44, objectFit: "contain" }} />
+        <div style={{ padding: "12px 8px 8px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 10, overflow: "hidden", position: "relative" }}>
+          {/* Logo icon — bigger, centered when collapsed */}
+          <div style={{ width: 52, height: 52, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <img src="/Logo.png" alt="BUPulse" style={{ width: 52, height: 52, objectFit: "contain" }} />
           </div>
 
           {/* Brand + role */}
           <div style={{ opacity: expanded ? 1 : 0, transform: expanded ? "translateX(0)" : "translateX(-8px)", transition: "all 0.18s ease", flex: 1, minWidth: 0, overflow: "hidden" }}>
-            <span style={{ color: "#fff", fontSize: 16, fontFamily: "var(--font-display, serif)", fontWeight: 600, display: "block", lineHeight: 1.2 }}>BUPulse</span>
+            <span className="bupulse-brand-text" style={{ fontSize: 17, fontFamily: "var(--font-display, serif)", fontWeight: 700, display: "block", lineHeight: 1.2 }}>BUPulse</span>
             <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.7px", color: accent }}>{role}</span>
           </div>
 
@@ -298,6 +298,21 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
           z-index: 40; display: none;
         }
         @keyframes scaleIn { from { opacity:0; transform:scale(0.92) translateY(-4px); } to { opacity:1; transform:scale(1) translateY(0); } }
+
+        /* BUPulse gradient text fade animation */
+        @keyframes brandGradient {
+          0%   { background-position: 0% 50%; }
+          50%  { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        .bupulse-brand-text {
+          background: linear-gradient(90deg, #4ade80, #22d3ee, #3b82f6, #06b6d4, #4ade80);
+          background-size: 300% 300%;
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          animation: brandGradient 4s ease infinite;
+        }
 
         @media (max-width: 768px) {
           .sb-root { width: 240px !important; transform: translateX(-100%); transition: transform 0.28s ease; }
