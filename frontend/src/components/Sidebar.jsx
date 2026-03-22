@@ -197,7 +197,9 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
         {/* ── Logo + account switcher ───────────────────── */}
         <div style={{ padding: "16px 8px 8px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", gap: 10, overflow: "hidden", position: "relative" }}>
           {/* Logo icon */}
-          <div style={{ width: 44, height: 44, borderRadius: 12, background: "linear-gradient(135deg,#d4820a,#f59e0b)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>📚</div>
+          <div style={{ width: 44, height: 44, borderRadius: 12, overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent" }}>
+            <img src="/Logo.png" alt="BUPulse" style={{ width: 44, height: 44, objectFit: "contain" }} />
+          </div>
 
           {/* Brand + role */}
           <div style={{ opacity: expanded ? 1 : 0, transform: expanded ? "translateX(0)" : "translateX(-8px)", transition: "all 0.18s ease", flex: 1, minWidth: 0, overflow: "hidden" }}>
@@ -246,24 +248,6 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
 
         {/* ── Bottom utilities ──────────────────────────── */}
         <div style={{ padding: "8px 8px 14px", borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", gap: 2, flexShrink: 0 }}>
-          {/* Dark mode */}
-          <button
-            onClick={toggleDark}
-            aria-label="Toggle theme"
-            style={{
-              display: "flex", alignItems: "center", gap: 14,
-              padding: "4px 8px", borderRadius: 14, background: "transparent",
-              border: "none", cursor: "pointer", color: "rgba(255,255,255,0.5)",
-              transition: "all 0.14s", width: "100%", overflow: "hidden",
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
-            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-          >
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: "rgba(255,255,255,0.04)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "rgba(255,255,255,0.6)" }}>
-              {dark ? <Icons.sun /> : <Icons.moon />}
-            </div>
-            <span style={{ fontSize: 14, whiteSpace: "nowrap", opacity: expanded ? 1 : 0, transition: "opacity 0.18s" }}>{dark ? "Light mode" : "Dark mode"}</span>
-          </button>
 
           {/* Logout */}
           <button
