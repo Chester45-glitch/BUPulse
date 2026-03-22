@@ -516,7 +516,7 @@ export default function Schedule() {
         const ampm = h >= 12 ? "PM" : "AM";
         const h12  = h % 12 || 12;
         const label = m === 0 ? `${h12}:00 ${ampm}` : `${h12}:30`;
-        timeLabels.push({ h, m, label, showLabel: m === 0 });
+        timeLabels.push({ h, m, label, isHour: m === 0 });
       }
     }
 
@@ -566,14 +566,20 @@ export default function Schedule() {
 
             {/* Time labels column */}
             <div style={{width:TIME_COL,flexShrink:0,borderRight:"1px solid var(--border-color)",position:"relative"}}>
-              {timeLabels.map(({h,m,label,showLabel},i) => (
+              {timeLabels.map(({h,m,label,isHour},i) => (
                 <div key={i} style={{
                   height:SLOT_HEIGHT,
-                  borderBottom: m===0 ? "1px solid var(--border-color)" : "1px dashed rgba(0,0,0,0.04)",
+                  borderBottom: isHour ? "1px solid var(--border-color)" : "1px solid rgba(0,0,0,0.07)",
                   display:"flex",alignItems:"flex-start",justifyContent:"flex-end",
                   paddingRight:6,paddingTop:2,boxSizing:"border-box",
                 }}>
-                  {showLabel && <span style={{fontSize:9.5,color:"var(--text-faint)",fontWeight:500,lineHeight:1,whiteSpace:"nowrap"}}>{label}</span>}
+                  <span style={{
+                    fontSize: isHour ? 9.5 : 8.5,
+                    color: isHour ? "var(--text-muted)" : "var(--text-faint)",
+                    fontWeight: isHour ? 600 : 400,
+                    lineHeight:1,
+                    whiteSpace:"nowrap",
+                  }}>{label}</span>
                 </div>
               ))}
             </div>
@@ -588,13 +594,13 @@ export default function Schedule() {
                 <div key={day} style={{flex:1,borderRight:"1px solid var(--border-color)",position:"relative",height:totalH,minWidth:80}}>
 
                   {/* Hour/half-hour grid lines */}
-                  {timeLabels.map(({h,m},i) => (
+                  {timeLabels.map(({h,m,isHour},i) => (
                     <div key={i} style={{
                       position:"absolute",left:0,right:0,
                       top: i * SLOT_HEIGHT,
                       height:SLOT_HEIGHT,
-                      borderBottom: m===0 ? "1px solid var(--border-color)" : "1px dashed rgba(0,0,0,0.05)",
-                      background: isToday && m===0 ? "rgba(22,163,74,0.01)" : "transparent",
+                      borderBottom: isHour ? "1px solid var(--border-color)" : "1px solid rgba(0,0,0,0.07)",
+                      background: isToday && isHour ? "rgba(22,163,74,0.01)" : "transparent",
                     }}/>
                   ))}
 
