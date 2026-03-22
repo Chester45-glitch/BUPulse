@@ -349,6 +349,72 @@ function CalendarView({ schedules, deadlines, onJumpToDate, jumpTarget }) {
   );
 }
 
+// ── Activities Panel (below calendar) ─────────────────────────
+function ActivitiesPanel({ overdueDue, upcomingDue, jumpToDate }) {
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:16}} className="activities-panel">
+      {/* Overdue */}
+      <div style={{background:"var(--card-bg)",borderRadius:14,border:"1px solid #fecaca",overflow:"hidden"}}>
+        <div style={{padding:"10px 14px",borderBottom:"1px solid #fecaca",display:"flex",alignItems:"center",gap:6}}>
+          <IcoAlert/>
+          <span style={{fontSize:12,fontWeight:700,color:"#dc2626",textTransform:"uppercase",letterSpacing:"0.4px"}}>Overdue</span>
+          {overdueDue.length>0&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:700,background:"#dc2626",color:"#fff",borderRadius:99,padding:"1px 6px"}}>{overdueDue.length}</span>}
+        </div>
+        <div style={{maxHeight:220,overflowY:"auto"}}>
+          {overdueDue.length===0?(
+            <div style={{padding:"16px",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>🎉 No overdue!</div>
+          ):overdueDue.map((d,i)=>(
+            <div key={i} onClick={()=>jumpToDate(d.dueDate)}
+              style={{padding:"10px 14px",borderBottom:"1px solid var(--border-color)",cursor:"pointer"}}
+              onMouseEnter={e=>e.currentTarget.style.background="rgba(220,38,38,0.04)"}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <div style={{fontSize:12.5,fontWeight:600,color:"var(--text-primary)",marginBottom:1}}>{d.title}</div>
+              <div style={{fontSize:11,color:"var(--text-muted)",marginBottom:3}}>{d.courseName}</div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <span style={{fontSize:10,color:"var(--text-faint)"}}>{fmtDate(d.dueDate)}</span>
+                <span style={{fontSize:10,fontWeight:700,color:"#dc2626",background:"#fee2e2",padding:"1px 6px",borderRadius:99}}>{Math.abs(daysUntil(d.dueDate))}d overdue</span>
+              </div>
+              <span style={{fontSize:9.5,color:"#3b82f6",marginTop:2,display:"block"}}>📅 Tap to view on calendar</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Upcoming */}
+      <div style={{background:"var(--card-bg)",borderRadius:14,border:"1px solid var(--card-border)",overflow:"hidden"}}>
+        <div style={{padding:"10px 14px",borderBottom:"1px solid var(--card-border)",display:"flex",alignItems:"center",gap:6}}>
+          <IcoCalendar/>
+          <span style={{fontSize:12,fontWeight:700,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:"0.4px"}}>Upcoming (14d)</span>
+          {upcomingDue.length>0&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:700,background:"var(--green-700)",color:"#fff",borderRadius:99,padding:"1px 6px"}}>{upcomingDue.length}</span>}
+        </div>
+        <div style={{maxHeight:220,overflowY:"auto"}}>
+          {upcomingDue.length===0?(
+            <div style={{padding:"16px",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>🎉 All caught up!</div>
+          ):upcomingDue.map((d,i)=>{
+            const diff=daysUntil(d.dueDate);
+            const color=diff===0?"#dc2626":diff<=2?"#d97706":"#16a34a";
+            const label=diff===0?"Today":diff===1?"Tomorrow":`${diff}d left`;
+            return(
+              <div key={i} onClick={()=>jumpToDate(d.dueDate)}
+                style={{padding:"10px 14px",borderBottom:"1px solid var(--border-color)",cursor:"pointer"}}
+                onMouseEnter={e=>e.currentTarget.style.background="rgba(22,163,74,0.04)"}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <div style={{fontSize:12.5,fontWeight:600,color:"var(--text-primary)",marginBottom:1}}>{d.title}</div>
+                <div style={{fontSize:11,color:"var(--text-muted)",marginBottom:3}}>{d.courseName}</div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <span style={{fontSize:10,color:"var(--text-faint)"}}>{fmtDate(d.dueDate)}</span>
+                  <span style={{fontSize:10,fontWeight:700,color,background:color+"18",padding:"1px 6px",borderRadius:99}}>{label}</span>
+                </div>
+                <span style={{fontSize:9.5,color:"#3b82f6",marginTop:2,display:"block"}}>📅 Tap to view on calendar</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Schedule Page ─────────────────────────────────────────────
 export default function Schedule() {
   const { user } = useAuth();
@@ -459,70 +525,6 @@ export default function Schedule() {
           </div>
         );
       })}
-    </div>
-  );
-
-  // ── Activities panel (below calendar) ────────────────────────
-  const ActivitiesPanel = () => (
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:16}} className="activities-panel">
-      {/* Overdue */}
-      <div style={{background:"var(--card-bg)",borderRadius:14,border:"1px solid #fecaca",overflow:"hidden"}}>
-        <div style={{padding:"10px 14px",borderBottom:"1px solid #fecaca",display:"flex",alignItems:"center",gap:6}}>
-          <IcoAlert/>
-          <span style={{fontSize:12,fontWeight:700,color:"#dc2626",textTransform:"uppercase",letterSpacing:"0.4px"}}>Overdue</span>
-          {overdueDue.length>0&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:700,background:"#dc2626",color:"#fff",borderRadius:99,padding:"1px 6px"}}>{overdueDue.length}</span>}
-        </div>
-        <div style={{maxHeight:220,overflowY:"auto"}}>
-          {overdueDue.length===0?(
-            <div style={{padding:"16px",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>🎉 No overdue!</div>
-          ):overdueDue.map((d,i)=>(
-            <div key={i} onClick={()=>jumpToDate(d.dueDate)}
-              style={{padding:"10px 14px",borderBottom:"1px solid var(--border-color)",cursor:"pointer",transition:"background 0.12s"}}
-              onMouseEnter={e=>e.currentTarget.style.background="rgba(220,38,38,0.04)"}
-              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-              <div style={{fontSize:12.5,fontWeight:600,color:"var(--text-primary)",marginBottom:1}}>{d.title}</div>
-              <div style={{fontSize:11,color:"var(--text-muted)",marginBottom:3}}>{d.courseName}</div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <span style={{fontSize:10,color:"var(--text-faint)"}}>{fmtDate(d.dueDate)}</span>
-                <span style={{fontSize:10,fontWeight:700,color:"#dc2626",background:"#fee2e2",padding:"1px 6px",borderRadius:99}}>{Math.abs(daysUntil(d.dueDate))}d overdue</span>
-              </div>
-              <span style={{fontSize:9.5,color:"#3b82f6",marginTop:2,display:"block"}}>📅 Tap to view on calendar</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Upcoming */}
-      <div style={{background:"var(--card-bg)",borderRadius:14,border:"1px solid var(--card-border)",overflow:"hidden"}}>
-        <div style={{padding:"10px 14px",borderBottom:"1px solid var(--card-border)",display:"flex",alignItems:"center",gap:6}}>
-          <IcoCalendar/>
-          <span style={{fontSize:12,fontWeight:700,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:"0.4px"}}>Upcoming (14d)</span>
-          {upcomingDue.length>0&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:700,background:"var(--green-700)",color:"#fff",borderRadius:99,padding:"1px 6px"}}>{upcomingDue.length}</span>}
-        </div>
-        <div style={{maxHeight:220,overflowY:"auto"}}>
-          {upcomingDue.length===0?(
-            <div style={{padding:"16px",textAlign:"center",color:"var(--text-muted)",fontSize:13}}>🎉 All caught up!</div>
-          ):upcomingDue.map((d,i)=>{
-            const diff=daysUntil(d.dueDate);
-            const color=diff===0?"#dc2626":diff<=2?"#d97706":"#16a34a";
-            const label=diff===0?"Today":diff===1?"Tomorrow":`${diff}d left`;
-            return(
-              <div key={i} onClick={()=>jumpToDate(d.dueDate)}
-                style={{padding:"10px 14px",borderBottom:"1px solid var(--border-color)",cursor:"pointer",transition:"background 0.12s"}}
-                onMouseEnter={e=>e.currentTarget.style.background="rgba(22,163,74,0.04)"}
-                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                <div style={{fontSize:12.5,fontWeight:600,color:"var(--text-primary)",marginBottom:1}}>{d.title}</div>
-                <div style={{fontSize:11,color:"var(--text-muted)",marginBottom:3}}>{d.courseName}</div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                  <span style={{fontSize:10,color:"var(--text-faint)"}}>{fmtDate(d.dueDate)}</span>
-                  <span style={{fontSize:10,fontWeight:700,color,background:color+"18",padding:"1px 6px",borderRadius:99}}>{label}</span>
-                </div>
-                <span style={{fontSize:9.5,color:"#3b82f6",marginTop:2,display:"block"}}>📅 Tap to view on calendar</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
     </div>
   );
 
@@ -646,7 +648,7 @@ export default function Schedule() {
               {/* Full-width calendar */}
               <CalendarView schedules={schedules} deadlines={deadlines} onJumpToDate={jumpToDate} jumpTarget={jumpTarget}/>
               {/* Activities panel BELOW calendar */}
-              <ActivitiesPanel/>
+              <ActivitiesPanel overdueDue={overdueDue} upcomingDue={upcomingDue} jumpToDate={jumpToDate}/>
             </>
           ) : renderWeek()}
         </>
