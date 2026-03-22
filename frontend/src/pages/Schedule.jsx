@@ -501,32 +501,171 @@ export default function Schedule() {
     catch{setError("Failed to delete");}
   };
 
-  const renderWeek = () => (
-    <div className="schedule-week-grid" style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8,overflowX:"auto"}}>
-      {DAYS.map(day=>{
-        const dayClasses=schedules.filter(s=>s.day_of_week===day).sort((a,b)=>timeToMins(a.start_time)-timeToMins(b.start_time));
-        const isToday=day===todayName;
-        return(
-          <div key={day} style={{minWidth:100}}>
-            <div style={{padding:"8px 6px",borderRadius:"10px 10px 0 0",background:isToday?"var(--green-700)":"var(--bg-tertiary)",color:isToday?"#fff":"var(--text-muted)",fontSize:12,fontWeight:isToday?700:600,textAlign:"center",marginBottom:6}}>
-              {SHORT[day]}
-              {isToday&&<div style={{fontSize:9,fontWeight:400,opacity:0.85,marginTop:1}}>Today</div>}
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              {dayClasses.map(c=>(
-                <ClassCard key={c.id} c={c} onEdit={entry=>{setEditEntry(entry);setShowModal(true);}} onDelete={handleDelete}/>
-              ))}
-              {dayClasses.length===0&&(
-                <div style={{minHeight:60,borderRadius:8,border:"1.5px dashed var(--card-border)",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                  <span style={{fontSize:10,color:"var(--text-faint)"}}>No class</span>
-                </div>
-              )}
-            </div>
+  const renderWeek = () => {
+    // ── Time grid config ──────────────────────────────────────
+    const SLOT_HEIGHT = 30;   // px per 30-minute slot
+    const START_HOUR  = 6;    // 6:00 AM
+    const END_HOUR    = 22;   // 10:00 PM
+    const TOTAL_MINS  = (END_HOUR - START_HOUR) * 60;
+
+    // Build 30-min time labels
+    const timeLabels = [];
+    for (let h = START_HOUR; h <= END_HOUR; h++) {
+      for (let m = 0; m < 60; m += 30) {
+        if (h === END_HOUR && m > 0) break;
+        const ampm = h >= 12 ? "PM" : "AM";
+        const h12  = h % 12 || 12;
+        const label = m === 0 ? `${h12}:00 ${ampm}` : `${h12}:30`;
+        timeLabels.push({ h, m, label, showLabel: m === 0 });
+      }
+    }
+
+    // Position + height for a class block
+    const getStyle = (start_time, end_time) => {
+      const startMins = timeToMins(start_time) - START_HOUR * 60;
+      const endMins   = timeToMins(end_time)   - START_HOUR * 60;
+      const clamped_start = Math.max(0, startMins);
+      const clamped_end   = Math.min(TOTAL_MINS, endMins);
+      const top    = (clamped_start / 30) * SLOT_HEIGHT;
+      const height = Math.max(SLOT_HEIGHT, ((clamped_end - clamped_start) / 30) * SLOT_HEIGHT);
+      return { top, height };
+    };
+
+    const nowLine = nowMins >= START_HOUR*60 && nowMins <= END_HOUR*60
+      ? ((nowMins - START_HOUR*60) / 30) * SLOT_HEIGHT
+      : null;
+
+    const TIME_COL = 56; // px width of time label column
+
+    return (
+      <div style={{background:"var(--card-bg)",borderRadius:14,border:"1px solid var(--card-border)",overflow:"hidden",boxShadow:"var(--shadow-sm)"}}>
+
+        {/* ── Sticky header row ── */}
+        <div style={{display:"flex",borderBottom:"2px solid var(--card-border)",background:"var(--card-bg)",position:"sticky",top:0,zIndex:10}}>
+          {/* Time column header */}
+          <div style={{width:TIME_COL,flexShrink:0,padding:"10px 6px",borderRight:"1px solid var(--border-color)",fontSize:10,color:"var(--text-faint)",textAlign:"center",fontWeight:600}}>
+            TIME
           </div>
-        );
-      })}
-    </div>
-  );
+          {/* Day headers */}
+          {DAYS.map(day => {
+            const isToday = day === todayName;
+            const count   = schedules.filter(s=>s.day_of_week===day).length;
+            return (
+              <div key={day} style={{flex:1,padding:"8px 4px",textAlign:"center",borderRight:"1px solid var(--border-color)",background:isToday?"var(--green-700)":"transparent"}}>
+                <div style={{fontSize:11.5,fontWeight:700,color:isToday?"#fff":"var(--text-muted)",textTransform:"uppercase",letterSpacing:"0.3px"}}>{SHORT[day]}</div>
+                {count > 0 && <div style={{fontSize:9.5,marginTop:1,color:isToday?"rgba(255,255,255,0.7)":"var(--text-faint)"}}>{count} class{count!==1?"es":""}</div>}
+                {isToday && count===0 && <div style={{fontSize:9.5,marginTop:1,color:"rgba(255,255,255,0.65)"}}>Today</div>}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── Scrollable grid body ── */}
+        <div style={{overflowY:"auto",maxHeight:"70vh",overflowX:"auto"}}>
+          <div style={{display:"flex",minWidth:600}}>
+
+            {/* Time labels column */}
+            <div style={{width:TIME_COL,flexShrink:0,borderRight:"1px solid var(--border-color)",position:"relative"}}>
+              {timeLabels.map(({h,m,label,showLabel},i) => (
+                <div key={i} style={{
+                  height:SLOT_HEIGHT,
+                  borderBottom: m===0 ? "1px solid var(--border-color)" : "1px dashed rgba(0,0,0,0.04)",
+                  display:"flex",alignItems:"flex-start",justifyContent:"flex-end",
+                  paddingRight:6,paddingTop:2,boxSizing:"border-box",
+                }}>
+                  {showLabel && <span style={{fontSize:9.5,color:"var(--text-faint)",fontWeight:500,lineHeight:1,whiteSpace:"nowrap"}}>{label}</span>}
+                </div>
+              ))}
+            </div>
+
+            {/* Day columns */}
+            {DAYS.map(day => {
+              const dayClasses = schedules.filter(s=>s.day_of_week===day);
+              const isToday    = day === todayName;
+              const totalH     = (TOTAL_MINS / 30) * SLOT_HEIGHT;
+
+              return (
+                <div key={day} style={{flex:1,borderRight:"1px solid var(--border-color)",position:"relative",height:totalH,minWidth:80}}>
+
+                  {/* Hour/half-hour grid lines */}
+                  {timeLabels.map(({h,m},i) => (
+                    <div key={i} style={{
+                      position:"absolute",left:0,right:0,
+                      top: i * SLOT_HEIGHT,
+                      height:SLOT_HEIGHT,
+                      borderBottom: m===0 ? "1px solid var(--border-color)" : "1px dashed rgba(0,0,0,0.05)",
+                      background: isToday && m===0 ? "rgba(22,163,74,0.01)" : "transparent",
+                    }}/>
+                  ))}
+
+                  {/* Current time line */}
+                  {isToday && nowLine !== null && (
+                    <div style={{position:"absolute",left:0,right:0,top:nowLine,zIndex:5,pointerEvents:"none"}}>
+                      <div style={{height:2,background:"#dc2626",position:"relative"}}>
+                        <div style={{position:"absolute",left:-1,top:-4,width:10,height:10,borderRadius:"50%",background:"#dc2626"}}/>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Class blocks */}
+                  {dayClasses.map(c => {
+                    const {top, height} = getStyle(c.start_time, c.end_time);
+                    const isShort = height < 50;
+                    return (
+                      <div key={c.id} style={{
+                        position:"absolute",
+                        left:2, right:2,
+                        top: top,
+                        height: height,
+                        background: c.color,
+                        borderRadius:6,
+                        overflow:"hidden",
+                        zIndex:3,
+                        boxShadow:"0 1px 4px rgba(0,0,0,0.15)",
+                        cursor:"pointer",
+                        transition:"filter 0.12s",
+                      }}
+                        onClick={() => { setEditEntry(c); setShowModal(true); }}
+                        onMouseEnter={e=>e.currentTarget.style.filter="brightness(1.1)"}
+                        onMouseLeave={e=>e.currentTarget.style.filter="none"}
+                        title={`${c.course_name}\n${fmtTime(c.start_time)} – ${fmtTime(c.end_time)}${c.room?"\n📍 "+c.room:""}${c.professor?"\n👤 "+c.professor:""}`}
+                      >
+                        <div style={{padding: isShort ? "2px 5px" : "4px 6px", height:"100%", boxSizing:"border-box", display:"flex", flexDirection:"column", justifyContent:"flex-start"}}>
+                          <div style={{fontSize: isShort ? 9.5 : 10.5, fontWeight:700, color:"#fff", lineHeight:1.25, overflow:"hidden", textOverflow:"ellipsis", whiteSpace: isShort ? "nowrap" : "normal"}}>
+                            {c.course_name}
+                          </div>
+                          {!isShort && (
+                            <>
+                              <div style={{fontSize:9,color:"rgba(255,255,255,0.8)",marginTop:1,lineHeight:1.3}}>
+                                {fmtTime(c.start_time)} – {fmtTime(c.end_time)}
+                              </div>
+                              {c.room && height >= 70 && (
+                                <div style={{fontSize:9,color:"rgba(255,255,255,0.75)",marginTop:1}}>📍 {c.room}</div>
+                              )}
+                              {c.professor && height >= 90 && (
+                                <div style={{fontSize:9,color:"rgba(255,255,255,0.75)",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>👤 {c.professor}</div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                        {/* Delete button on hover */}
+                        <button
+                          onClick={e=>{e.stopPropagation();handleDelete(c.id);}}
+                          style={{position:"absolute",top:2,right:2,width:16,height:16,borderRadius:3,background:"rgba(0,0,0,0.25)",border:"none",color:"#fff",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.12s"}}
+                          onMouseEnter={e=>e.currentTarget.style.opacity="1"}
+                          onMouseLeave={e=>e.currentTarget.style.opacity="0"}
+                        >✕</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div style={{animation:"fadeIn 0.3s ease", maxWidth:900, margin:"0 auto", width:"100%"}}>
