@@ -2,13 +2,15 @@ import { useState, useRef, useEffect } from "react";
 import { useSharedChat } from "../hooks/useSharedChat";
 import { ChatInput } from "./ChatComponents";
 import { useAuth } from "../context/AuthContext";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 const IconClose  = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
 const IconChat   = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
 const IconExpand = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>;
 const IconTrash  = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>;
 const IconBot    = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7H3a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"/><path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/><circle cx="9" cy="11" r="1" fill="currentColor"/><circle cx="15" cy="11" r="1" fill="currentColor"/></svg>;
+
+const PULSBOT_PATHS = ["/ask-pulsbot", "/professor/ask-pulsbot", "/parent/ask-pulsbot"];
 
 const SUGGESTIONS = {
   student:   ["What's due this week?", "Any overdue work?", "Summarize announcements"],
@@ -29,6 +31,7 @@ const renderContent = (text) => {
 export default function FloatingChatbot() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { messages, loading, send, clearChat } = useSharedChat();
   const [open, setOpen]     = useState(false);
   const [unread, setUnread] = useState(0);
@@ -39,21 +42,27 @@ export default function FloatingChatbot() {
   const suggestions = SUGGESTIONS[role] || SUGGESTIONS.student;
   const showSuggestions = messages.length <= 1 && !loading;
 
+  // Hide floating bot entirely when on the PulsBot page
+  const isOnPulsbotPage = PULSBOT_PATHS.includes(pathname);
+
   useEffect(() => { if (open) setUnread(0); }, [open]);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     if (!open && messages[messages.length - 1]?.role === "assistant") setUnread(n => n + 1);
   }, [messages]);
 
+  // Don't render anything on the pulsbot page
+  if (isOnPulsbotPage) return null;
+
   return (
     <>
-      {/* Floating window */}
+      {/* Floating window — responsive on mobile */}
       {open && (
-        <div style={{
-          position: "fixed", bottom: 88, right: 24, width: 380, height: 560,
+        <div className="float-chat-window" style={{
+          position: "fixed", zIndex: 1000,
           background: "var(--card-bg)", borderRadius: 18,
           border: "1px solid var(--card-border)", boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
-          display: "flex", flexDirection: "column", zIndex: 1000,
+          display: "flex", flexDirection: "column",
           animation: "floatUp 0.25s cubic-bezier(0.34,1.56,0.64,1)",
           overflow: "hidden",
         }}>
@@ -70,7 +79,7 @@ export default function FloatingChatbot() {
               </div>
             </div>
             <div style={{ display: "flex", gap: 6 }}>
-              <button onClick={() => navigate(pulsbotPath)} title="Open full page"
+              <button onClick={() => { navigate(pulsbotPath); setOpen(false); }} title="Open full page"
                 style={{ width: 28, height: 28, borderRadius: 7, background: "rgba(255,255,255,0.12)", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.7)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <IconExpand />
               </button>
@@ -87,15 +96,13 @@ export default function FloatingChatbot() {
 
           {/* Messages */}
           <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 2 }}>
-
-            {/* Suggestions */}
             {showSuggestions && (
               <div style={{ padding: "16px 0 8px" }}>
                 <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8, textAlign: "center" }}>Try asking:</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {suggestions.map((s) => (
                     <button key={s} onClick={() => send({ text: s })}
-                      style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--card-border)", background: "var(--bg-secondary)", color: "var(--text-secondary)", fontSize: 12.5, cursor: "pointer", textAlign: "left", transition: "all 0.12s" }}
+                      style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--card-border)", background: "var(--bg-secondary)", color: "var(--text-secondary)", fontSize: 12.5, cursor: "pointer", textAlign: "left" }}
                       onMouseEnter={e => e.currentTarget.style.borderColor = "var(--green-600)"}
                       onMouseLeave={e => e.currentTarget.style.borderColor = "var(--card-border)"}>
                       {s}
@@ -149,6 +156,7 @@ export default function FloatingChatbot() {
 
       {/* Floating button */}
       <button onClick={() => setOpen(o => !o)}
+        className="float-chat-btn"
         style={{
           position: "fixed", bottom: 24, right: 24, width: 56, height: 56,
           borderRadius: "50%", background: open ? "var(--bg-tertiary)" : "linear-gradient(135deg, var(--green-800), var(--green-600))",
@@ -169,6 +177,28 @@ export default function FloatingChatbot() {
       <style>{`
         @keyframes floatUp { from { opacity:0; transform:translateY(20px) scale(0.95); } to { opacity:1; transform:translateY(0) scale(1); } }
         @keyframes pulse-dot { 0%,100% { opacity:.3; transform:scale(0.8); } 50% { opacity:1; transform:scale(1.15); } }
+
+        /* Desktop */
+        .float-chat-window {
+          bottom: 88px; right: 24px;
+          width: 380px; height: 560px;
+        }
+
+        /* Mobile — full width, taller */
+        @media (max-width: 768px) {
+          .float-chat-window {
+            bottom: 0 !important;
+            right: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 80vh !important;
+            border-radius: 18px 18px 0 0 !important;
+          }
+          .float-chat-btn {
+            bottom: 16px !important;
+            right: 16px !important;
+          }
+        }
       `}</style>
     </>
   );
