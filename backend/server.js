@@ -22,13 +22,15 @@ const PORT = process.env.PORT || 3001;
 app.use(cors({
   origin: [
     "http://localhost:5173",
-    "https://bu-pulse.vercel.app",
+    "https://bu-pulse.vercel.app",       // Vercel web app
+    "capacitor://localhost",              // Capacitor Android (production)
+    "http://localhost",                   // Capacitor Android (dev)
     process.env.FRONTEND_URL,
   ].filter(Boolean),
   credentials: true,
 }));
 
-app.use(express.json({ limit: "25mb" })); // 10MB file = ~13.3MB base64, 25mb gives safe headroom
+app.use(express.json({ limit: "25mb" }));
 app.use(session({
   secret: process.env.SESSION_SECRET || "bupulse-secret",
   resave: false,
