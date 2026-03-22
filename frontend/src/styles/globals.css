@@ -72,3 +72,59 @@ input, textarea, select { font-family: var(--font-body); }
 @keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
 @keyframes badgePop{ 0% { transform: scale(0); } 70% { transform: scale(1.2); } 100% { transform: scale(1); } }
 @keyframes scaleIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
+
+/* ── Mobile responsive fixes ─────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Page padding */
+  .page-main { padding: 12px !important; }
+
+  /* Schedule — weekly grid scrolls horizontally on mobile */
+  .schedule-week-grid {
+    display: grid !important;
+    grid-template-columns: repeat(7, minmax(120px, 1fr)) !important;
+    gap: 6px !important;
+    overflow-x: auto !important;
+    padding-bottom: 8px !important;
+  }
+
+  /* Calendar layout stacks on mobile */
+  .cal-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Dashboard grid stacks */
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Courses grid stacks */
+  .courses-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Extracted preview table scrollable */
+  .extracted-table {
+    overflow-x: auto !important;
+    display: block !important;
+  }
+
+  /* Login left panel hidden */
+  .login-left { display: none !important; }
+  .login-right { padding: 24px 16px !important; }
+
+  /* Announcement form */
+  .ann-form { padding: 12px !important; }
+
+  /* Floating chatbot smaller on mobile */
+  .floating-chat { width: calc(100vw - 32px) !important; right: 16px !important; bottom: 80px !important; }
+}
+
+@media (max-width: 480px) {
+  html { font-size: 14px; }
+
+  /* Stats grid 2 col on small screens */
+  .stats-grid-2 { grid-template-columns: 1fr 1fr !important; }
+
+  /* Prof stats 1 col */
+  .prof-stats { grid-template-columns: 1fr !important; }
+}
