@@ -229,7 +229,7 @@ export default function Sidebar({ isOpen, onClose, user, role = "student" }) {
               <Icons.switch />
             </button>
 
-            {switcherOpen && expanded && (
+            {switcherOpen && isExpanded && (
               <AccountSwitcher user={user} accent={accent} onClose={() => setSwitcherOpen(false)} />
             )}
           </div>
