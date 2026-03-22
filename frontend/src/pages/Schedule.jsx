@@ -340,7 +340,7 @@ export default function Schedule() {
 
   // ── Weekly grid (Sun–Sat) ────────────────────────────────────────
   const renderWeek = () => (
-    <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8}}>
+    <div className="schedule-week-grid" style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8,overflowX:"auto"}}>
       {DAYS.map(day=>{
         const dayClasses=schedules.filter(s=>s.day_of_week===day).sort((a,b)=>timeToMins(a.start_time)-timeToMins(b.start_time));
         const isToday=day===todayName;

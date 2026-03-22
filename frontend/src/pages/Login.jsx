@@ -76,7 +76,7 @@ export default function Login() {
         <div style={{ position: "relative", flex: 1, padding: "48px 52px 40px", display: "flex", flexDirection: "column" }}>
           {/* Brand */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 56 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg,#d4820a,#f59e0b)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>📚</div>
+            <img src="/Logo.png" alt="BUPulse" style={{ width: 38, height: 38, objectFit: "contain" }} />
             <span style={{ color: "#fff", fontSize: 19, fontFamily: "var(--font-display, serif)", fontWeight: 600 }}>BUPulse</span>
           </div>
 
