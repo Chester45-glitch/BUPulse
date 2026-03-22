@@ -155,7 +155,7 @@ function NavItem({ to, Icon, label, end, expanded, accent, onClick }) {
 
           <span style={{
             fontSize: 14, fontWeight: isActive ? 600 : 400,
-            opacity: isExpanded ? 1 : 0,
+            opacity: expanded ? 1 : 0,
             transition: "opacity 0.18s ease",
             whiteSpace: "nowrap",
           }}>{label}</span>
