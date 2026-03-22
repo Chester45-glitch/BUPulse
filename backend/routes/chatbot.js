@@ -441,18 +441,15 @@ router.post("/message", authenticateToken, async (req, res) => {
     });
 
     // ── FILE-BASED QUIZ GENERATION (professors only) ───────────────
-    // Store driveFileId whenever a file is uploaded so we can use it
-    // on the NEXT message even if driveFileId isn't in that message.
+    // Store driveFileId with a timestamp whenever a file is uploaded.
+    // On new upload, always overwrite — this clears any old stale reference.
     if (driveFileId && user.role === "professor") {
-      // Persist file ref for follow-up messages (column may not exist yet — non-fatal)
       supabase.from("users")
-        .update({ last_quiz_file: JSON.stringify({ driveFileId, fileType, fileName }) })
+        .update({ last_quiz_file: JSON.stringify({ driveFileId, fileType, fileName, uploadedAt: Date.now() }) })
         .eq("id", req.user.id)
         .then(() => {}).catch(() => {});
     }
 
-    // Quiz intent: explicit keywords OR professor just uploaded a file with no message
-    // (they'll type the class/details next, we store the file for that follow-up)
     // Check for confirmation of a pending quiz draft FIRST — before anything else
     const isConfirmWord = /^(yes|confirm|post|go ahead|create it|post it|sure|ok|okay|do it|proceed)[\s!.]*$/i.test(message?.trim() || "");
     if (isConfirmWord && user.role === "professor") {
@@ -480,9 +477,11 @@ router.post("/message", authenticateToken, async (req, res) => {
     }
 
     const hasQuizIntent = /quiz|form|question|generate|create.*from|based on|convert|make.*from|read.*file|use.*file|from.*file|from.*pdf|from.*ppt|from.*doc/i.test(message || "")
-      || (!message?.trim() && !!driveFileId); // file-only upload = likely quiz prep
+      || (!message?.trim() && !!driveFileId);
 
-    // Look up last uploaded file if not in current message
+    // Look up last uploaded file — but ONLY if it was uploaded within 25 minutes.
+    // Files older than that have expired from the in-memory cache anyway, so using
+    // them would just produce "File data expired" errors.
     let effectiveDriveFileId = driveFileId;
     let effectiveFileType    = fileType;
     let effectiveFileName    = fileName;
@@ -493,11 +492,21 @@ router.post("/message", authenticateToken, async (req, res) => {
           .from("users").select("last_quiz_file").eq("id", req.user.id).single();
         if (userData?.last_quiz_file) {
           const last = JSON.parse(userData.last_quiz_file);
-          effectiveDriveFileId = last.driveFileId;
-          effectiveFileType    = last.fileType;
-          effectiveFileName    = last.fileName;
+          const ageMs = Date.now() - (last.uploadedAt || 0);
+          if (ageMs < 25 * 60 * 1000) {
+            // Recent enough — reuse it
+            effectiveDriveFileId = last.driveFileId;
+            effectiveFileType    = last.fileType;
+            effectiveFileName    = last.fileName;
+          } else {
+            // Expired — wipe it so future requests don't hit this again
+            supabase.from("users")
+              .update({ last_quiz_file: null })
+              .eq("id", req.user.id)
+              .then(() => {}).catch(() => {});
+          }
         }
-      } catch {} // column may not exist yet — frontend ref handles this
+      } catch {}
     }
 
     const isQuizFromFile = user.role === "professor" && effectiveDriveFileId && hasQuizIntent;
@@ -513,6 +522,8 @@ router.post("/message", authenticateToken, async (req, res) => {
     if (isQuizFromFile) {
       try {
         const reply = await handleFileQuiz(req, user, message, effectiveDriveFileId, effectiveFileType, effectiveFileName, fileUrl);
+        // Clear the stored file ref — quiz was generated, it's no longer needed
+        supabase.from("users").update({ last_quiz_file: null }).eq("id", req.user.id).then(() => {}).catch(() => {});
         await supabase.from("chat_messages").insert({ user_id: req.user.id, role: "assistant", content: reply });
         return res.json({ message: reply, timestamp: new Date().toISOString() });
       } catch (err) {
