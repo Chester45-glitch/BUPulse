@@ -191,7 +191,7 @@ export default function Login() {
           {/* Security note */}
           <div style={{ display: "flex", alignItems: "flex-start", gap: 7, background: "rgba(22,163,74,0.06)", border: "1px solid rgba(22,163,74,0.2)", borderRadius: 10, padding: "11px 14px", color: "rgba(22,163,74,0.85)", fontSize: 12.5, lineHeight: 1.55 }}>
             <svg style={{ flexShrink: 0, marginTop: 1 }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            Use your official Bicol University Polangui email to access BUPulse. No password required.
+            Sign in with the Google account you use for your enrolled classes. No password required.
           </div>
         </div>
       </div>

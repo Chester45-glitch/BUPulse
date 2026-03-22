@@ -287,7 +287,7 @@ export default function Announcements({ role }) {
   }, {});
 
   return (
-    <div style={{ animation: "fadeIn 0.35s ease", maxWidth: 800 }}>
+    <div style={{ animation: "fadeIn 0.35s ease", maxWidth: 800, margin: "0 auto", width: "100%" }}>
 
       {/* Header row */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>

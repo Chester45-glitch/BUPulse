@@ -151,8 +151,8 @@ function RecordDetail({ record, isProfessor, onVerify, onSave, onClose }) {
   };
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-      <div style={{background:"var(--card-bg)",borderRadius:18,padding:24,width:"100%",maxWidth:500,boxShadow:"var(--shadow-xl)",maxHeight:"85vh",overflowY:"auto"}}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
+      <div style={{background:"var(--card-bg)",borderRadius:18,padding:24,width:"100%",maxWidth:500,boxShadow:"var(--shadow-xl)",maxHeight:"85vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
           <div>
             <h3 style={{fontSize:16,fontWeight:700,color:"var(--text-primary)",margin:0}}>{record.course_name}</h3>
@@ -395,7 +395,7 @@ export default function Attendance() {
 
   // Parent view
   if (isParent) return (
-    <div style={{animation:"fadeIn 0.3s ease",maxWidth:800}}>
+    <div style={{animation:"fadeIn 0.3s ease",maxWidth:800,margin:"0 auto",width:"100%"}}>
       <div style={{marginBottom:20}}>
         <h1 style={{fontSize:22,fontWeight:800,color:"var(--text-primary)",margin:0,display:"flex",alignItems:"center",gap:8}}>
           <IcoUsers/> Student Attendance
@@ -409,7 +409,7 @@ export default function Attendance() {
   );
 
   return (
-    <div style={{animation:"fadeIn 0.3s ease",maxWidth:800}}>
+    <div style={{animation:"fadeIn 0.3s ease",maxWidth:800,margin:"0 auto",width:"100%"}}>
       {/* Header */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:10}}>
         <div>
