@@ -77,70 +77,65 @@ export default function Dashboard() {
 
       {/* ── Hero ── */}
       <div style={{
-        background: "linear-gradient(135deg, #0d1f0d 0%, #1a3a1a 60%, #0f3320 100%)",
-        borderRadius: 20, padding: "28px 28px 24px", marginBottom: 16,
+        background: "var(--card-bg)",
+        border: "1px solid var(--card-border)",
+        borderRadius: 20, padding: "24px 28px", marginBottom: 14,
         position: "relative", overflow: "hidden",
+        boxShadow: "var(--shadow-sm)",
       }}>
-        {/* Dot pattern */}
-        <div style={{ position:"absolute", inset:0, opacity:0.05, backgroundImage:"radial-gradient(circle,#fff 1px,transparent 1px)", backgroundSize:"24px 24px", pointerEvents:"none" }}/>
-        {/* Glow orb */}
-        <div style={{ position:"absolute", top:-60, right:-60, width:200, height:200, borderRadius:"50%", background:"radial-gradient(circle,rgba(74,222,128,0.12) 0%,transparent 70%)", pointerEvents:"none" }}/>
+        {/* Subtle top accent — red only if overdue, else neutral */}
+        <div style={{ position:"absolute", top:0, left:0, right:0, height:3, background: overdueCount > 0 ? "#dc2626" : "var(--border-color)", borderRadius:"20px 20px 0 0" }}/>
 
         <div style={{ position:"relative", display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:16 }}>
           <div>
-            <p style={{ color:"rgba(255,255,255,0.5)", fontSize:12, marginBottom:6 }}>
+            <p style={{ color:"var(--text-muted)", fontSize:12, marginBottom:6 }}>
               {now.toLocaleDateString("en-PH",{weekday:"long",month:"long",day:"numeric",timeZone:"Asia/Manila"})}
             </p>
-            <h2 style={{ color:"#fff", fontSize:"clamp(20px,4vw,28px)", fontFamily:"var(--font-display)", fontWeight:700, marginBottom:6, lineHeight:1.2 }}>
+            <h2 style={{ color:"var(--text-primary)", fontSize:"clamp(20px,4vw,26px)", fontFamily:"var(--font-display)", fontWeight:700, marginBottom:4, lineHeight:1.2 }}>
               {greeting()}, {firstName}! 👋
             </h2>
-            <p style={{ color:"rgba(255,255,255,0.45)", fontSize:13.5 }}>
+            <p style={{ color:"var(--text-muted)", fontSize:13 }}>
               Here's what's happening in your classes today.
             </p>
           </div>
 
-          {/* Quick badges */}
-          <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+          {/* Quick badges — only red for overdue, grey for rest */}
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
             {overdueCount > 0 && (
-              <div onClick={() => navigate("/pending-activities")} style={{ background:"rgba(220,38,38,0.85)", backdropFilter:"blur(8px)", borderRadius:12, padding:"10px 14px", cursor:"pointer", border:"1px solid rgba(255,100,100,0.3)" }}>
-                <div style={{ fontSize:10, color:"#fca5a5", fontWeight:700, marginBottom:2 }}>⚠️ OVERDUE</div>
+              <div onClick={() => navigate("/pending-activities")} style={{ background:"#dc2626", borderRadius:12, padding:"10px 14px", cursor:"pointer" }}>
+                <div style={{ fontSize:10, color:"rgba(255,255,255,0.75)", fontWeight:700, marginBottom:2 }}>⚠ OVERDUE</div>
                 <div style={{ fontSize:22, fontWeight:800, color:"#fff", lineHeight:1 }}>{overdueCount}</div>
-                <div style={{ fontSize:10, color:"#fca5a5", marginTop:2 }}>Tap to view</div>
+                <div style={{ fontSize:10, color:"rgba(255,255,255,0.65)", marginTop:2 }}>Tap to view</div>
               </div>
             )}
             {pendingCount > 0 && (
-              <div onClick={() => navigate("/pending-activities")} style={{ background:"rgba(255,255,255,0.07)", backdropFilter:"blur(8px)", borderRadius:12, padding:"10px 14px", cursor:"pointer", border:"1px solid rgba(255,255,255,0.1)" }}>
-                <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)", fontWeight:700, marginBottom:2 }}>📋 PENDING</div>
-                <div style={{ fontSize:22, fontWeight:800, color:"#fff", lineHeight:1 }}>{pendingCount}</div>
-                <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", marginTop:2 }}>Due soon</div>
+              <div onClick={() => navigate("/pending-activities")} style={{ background:"var(--bg-tertiary)", borderRadius:12, padding:"10px 14px", cursor:"pointer", border:"1px solid var(--border-color)" }}>
+                <div style={{ fontSize:10, color:"var(--text-muted)", fontWeight:700, marginBottom:2 }}>PENDING</div>
+                <div style={{ fontSize:22, fontWeight:800, color:"var(--text-primary)", lineHeight:1 }}>{pendingCount}</div>
+                <div style={{ fontSize:10, color:"var(--text-muted)", marginTop:2 }}>Due soon</div>
               </div>
             )}
-            <div onClick={() => navigate("/announcements")} style={{ background:"rgba(255,255,255,0.07)", backdropFilter:"blur(8px)", borderRadius:12, padding:"10px 14px", cursor:"pointer", border:"1px solid rgba(255,255,255,0.1)" }}>
-              <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)", fontWeight:700, marginBottom:2 }}>🔔 NEW</div>
-              <div style={{ fontSize:22, fontWeight:800, color:"#fff", lineHeight:1 }}>{stats.newAnnouncements ?? 0}</div>
-              <div style={{ fontSize:10, color:"rgba(255,255,255,0.4)", marginTop:2 }}>Announcements</div>
+            <div onClick={() => navigate("/announcements")} style={{ background:"var(--bg-tertiary)", borderRadius:12, padding:"10px 14px", cursor:"pointer", border:"1px solid var(--border-color)" }}>
+              <div style={{ fontSize:10, color:"var(--text-muted)", fontWeight:700, marginBottom:2 }}>NEW</div>
+              <div style={{ fontSize:22, fontWeight:800, color:"var(--text-primary)", lineHeight:1 }}>{stats.newAnnouncements ?? 0}</div>
+              <div style={{ fontSize:10, color:"var(--text-muted)", marginTop:2 }}>Announcements</div>
             </div>
           </div>
         </div>
 
-        {/* Course pill strip */}
+        {/* Course pill strip — no color dots, just clean grey pills */}
         {courses.length > 0 && (
-          <div style={{ position:"relative", marginTop:20, display:"flex", gap:8, overflowX:"auto", paddingBottom:2 }}>
-            {courses.slice(0,6).map((c,i) => {
-              const colors = ["#16a34a","#2563eb","#7c3aed","#d97706","#0891b2","#db2777"];
-              const col = colors[i % colors.length];
-              return (
-                <a key={c.id} href={c.alternateLink} target="_blank" rel="noopener noreferrer"
-                  style={{ flexShrink:0, display:"inline-flex", alignItems:"center", gap:6, padding:"6px 12px", borderRadius:99, background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.12)", textDecoration:"none", transition:"all 0.15s" }}
-                  onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.15)"}
-                  onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.08)"}>
-                  <div style={{ width:8, height:8, borderRadius:"50%", background:col, flexShrink:0 }}/>
-                  <span style={{ fontSize:12, color:"rgba(255,255,255,0.8)", fontWeight:500, whiteSpace:"nowrap" }}>{c.name.length>22?c.name.slice(0,21)+"…":c.name}</span>
-                </a>
-              );
-            })}
+          <div style={{ marginTop:16, display:"flex", gap:6, overflowX:"auto", paddingBottom:2 }}>
+            {courses.slice(0,6).map((c,i) => (
+              <a key={c.id} href={c.alternateLink} target="_blank" rel="noopener noreferrer"
+                style={{ flexShrink:0, display:"inline-flex", alignItems:"center", padding:"5px 12px", borderRadius:99, background:"var(--bg-tertiary)", border:"1px solid var(--border-color)", textDecoration:"none", transition:"all 0.15s" }}
+                onMouseEnter={e=>{e.currentTarget.style.background="var(--border-color)";}}
+                onMouseLeave={e=>{e.currentTarget.style.background="var(--bg-tertiary)";}}>
+                <span style={{ fontSize:11.5, color:"var(--text-secondary)", fontWeight:500, whiteSpace:"nowrap" }}>{c.name.length>22?c.name.slice(0,21)+"…":c.name}</span>
+              </a>
+            ))}
             {courses.length > 6 && (
-              <button onClick={() => navigate("/enrolled-classes")} style={{ flexShrink:0, padding:"6px 12px", borderRadius:99, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.5)", fontSize:12, cursor:"pointer" }}>
+              <button onClick={() => navigate("/enrolled-classes")} style={{ flexShrink:0, padding:"5px 12px", borderRadius:99, background:"var(--bg-tertiary)", border:"1px solid var(--border-color)", color:"var(--text-muted)", fontSize:11.5, cursor:"pointer" }}>
                 +{courses.length-6} more
               </button>
             )}
@@ -151,28 +146,28 @@ export default function Dashboard() {
       {/* ── Stats row ── */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginBottom:16 }} className="stats-grid">
         {[
-          { label:"Classes", value:stats.totalCourses??0, sub:"Enrolled", color:"#16a34a", bg:"rgba(22,163,74,0.08)", path:"/enrolled-classes", icon:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>' },
-          { label:"Pending", value:pendingCount, sub:"Due soon", color:"#d97706", bg:"rgba(217,119,6,0.08)", path:"/pending-activities", icon:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>' },
-          { label:"Announcements", value:stats.newAnnouncements??0, sub:"Last 48h", color:"#2563eb", bg:"rgba(37,99,235,0.08)", path:"/announcements", icon:'<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>' },
-          { label:"Overdue", value:overdueCount, sub:"Needs attention", color:"#dc2626", bg:"rgba(220,38,38,0.08)", path:"/pending-activities", icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>' },
+          { label:"Classes",       value:stats.totalCourses??0,      sub:"Enrolled",       path:"/enrolled-classes",   icon:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',  red:false },
+          { label:"Pending",       value:pendingCount,               sub:"Due soon",        path:"/pending-activities", icon:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',                                                     red:false },
+          { label:"Announcements", value:stats.newAnnouncements??0,  sub:"Last 48h",        path:"/announcements",      icon:'<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',                             red:false },
+          { label:"Overdue",       value:overdueCount,               sub:"Needs attention", path:"/pending-activities", icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',        red:true  },
         ].map(s => (
           <div key={s.label} onClick={() => navigate(s.path)} style={{
             background:"var(--card-bg)", borderRadius:14,
-            border:`1px solid var(--card-border)`,
+            border: s.red && s.value > 0 ? "1px solid #fecaca" : "1px solid var(--card-border)",
             padding:"14px 16px", cursor:"pointer",
             transition:"all 0.18s", position:"relative", overflow:"hidden",
           }}
             onMouseEnter={e => { e.currentTarget.style.transform="translateY(-2px)"; e.currentTarget.style.boxShadow="var(--shadow-md)"; }}
             onMouseLeave={e => { e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow="none"; }}>
-            {/* Color accent bar */}
-            <div style={{ position:"absolute", top:0, left:0, right:0, height:3, background:s.color, borderRadius:"14px 14px 0 0" }}/>
+            {/* Top accent bar — red for overdue, grey for others */}
+            <div style={{ position:"absolute", top:0, left:0, right:0, height:3, background: s.red && s.value > 0 ? "#dc2626" : "var(--border-color)", borderRadius:"14px 14px 0 0" }}/>
             <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:10, marginTop:4 }}>
               <span style={{ fontSize:11, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.4px" }}>{s.label}</span>
-              <div style={{ width:30, height:30, borderRadius:8, background:s.bg, display:"flex", alignItems:"center", justifyContent:"center", color:s.color }}>
-                <Ico path={s.icon} size={16}/>
+              <div style={{ width:28, height:28, borderRadius:8, background:"var(--bg-tertiary)", display:"flex", alignItems:"center", justifyContent:"center", color: s.red && s.value > 0 ? "#dc2626" : "var(--text-muted)" }}>
+                <Ico path={s.icon} size={15}/>
               </div>
             </div>
-            <div style={{ fontSize:30, fontWeight:800, color:s.color, lineHeight:1, marginBottom:2 }}>{s.value}</div>
+            <div style={{ fontSize:30, fontWeight:800, color: s.red && s.value > 0 ? "#dc2626" : "var(--text-primary)", lineHeight:1, marginBottom:2 }}>{s.value}</div>
             <div style={{ fontSize:11.5, color:"var(--text-muted)" }}>{s.sub}</div>
           </div>
         ))}
@@ -185,12 +180,12 @@ export default function Dashboard() {
         <div style={{ background:"var(--card-bg)", borderRadius:16, border:"1px solid var(--card-border)", overflow:"hidden", boxShadow:"var(--shadow-sm)" }}>
           <div style={{ padding:"14px 16px", borderBottom:"1px solid var(--card-border)", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              <div style={{ width:28, height:28, borderRadius:8, background:"rgba(37,99,235,0.1)", display:"flex", alignItems:"center", justifyContent:"center", color:"#2563eb" }}>
+              <div style={{ width:28, height:28, borderRadius:8, background:"var(--bg-tertiary)", display:"flex", alignItems:"center", justifyContent:"center", color:"var(--text-muted)" }}>
                 <Ico path='<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>' size={14}/>
               </div>
               <span style={{ fontSize:14, fontWeight:700, color:"var(--text-primary)" }}>Announcements</span>
             </div>
-            <button onClick={() => navigate("/announcements")} style={{ fontSize:12, color:"var(--green-700)", fontWeight:600, cursor:"pointer", padding:"4px 10px", borderRadius:6, border:"1px solid var(--green-200)", background:"var(--green-50)" }}>View all →</button>
+            <button onClick={() => navigate("/announcements")} style={{ fontSize:12, color:"var(--text-secondary)", fontWeight:500, cursor:"pointer", padding:"4px 10px", borderRadius:6, border:"1px solid var(--border-color)", background:"transparent" }}>View all →</button>
           </div>
           <div style={{ padding:"8px 0" }}>
             {recentAnnouncements.length === 0 ? (
@@ -201,15 +196,13 @@ export default function Dashboard() {
             ) : recentAnnouncements.slice(0,4).map((ann,i) => {
               const h = Math.floor((Date.now() - new Date(ann.updateTime||ann.creationTime)) / 3600000);
               const ago = h < 1 ? "Just now" : h < 24 ? `${h}h ago` : `${Math.floor(h/24)}d ago`;
-              const PALETTE = ["#2563eb","#16a34a","#7c3aed","#d97706","#0891b2","#db2777","#dc2626"];
-              const col = PALETTE[(ann.courseName||"").charCodeAt(0) % PALETTE.length];
               return (
                 <div key={ann.id||i} style={{ padding:"10px 16px", borderBottom: i<recentAnnouncements.length-1?"1px solid var(--border-color)":"none", display:"flex", gap:10 }}>
-                  <div style={{ width:32, height:32, borderRadius:8, background:col, color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, flexShrink:0, marginTop:1 }}>
+                  <div style={{ width:32, height:32, borderRadius:8, background:"var(--bg-tertiary)", border:"1px solid var(--border-color)", color:"var(--text-muted)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, flexShrink:0, marginTop:1 }}>
                     {(ann.courseName||"?").slice(0,2).toUpperCase()}
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:11.5, fontWeight:700, color:col, marginBottom:2 }}>{ann.courseName}</div>
+                    <div style={{ fontSize:11.5, fontWeight:700, color:"var(--text-secondary)", marginBottom:2 }}>{ann.courseName}</div>
                     <div style={{ fontSize:13, color:"var(--text-primary)", lineHeight:1.45, marginBottom:3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{ann.text?.substring(0,70)}{ann.text?.length>70?"…":""}</div>
                     <div style={{ fontSize:11, color:"var(--text-muted)" }}>{ago}</div>
                   </div>
@@ -223,12 +216,12 @@ export default function Dashboard() {
         <div style={{ background:"var(--card-bg)", borderRadius:16, border:"1px solid var(--card-border)", overflow:"hidden", boxShadow:"var(--shadow-sm)" }}>
           <div style={{ padding:"14px 16px", borderBottom:"1px solid var(--card-border)", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              <div style={{ width:28, height:28, borderRadius:8, background:"rgba(217,119,6,0.1)", display:"flex", alignItems:"center", justifyContent:"center", color:"#d97706" }}>
+              <div style={{ width:28, height:28, borderRadius:8, background:"var(--bg-tertiary)", display:"flex", alignItems:"center", justifyContent:"center", color:"var(--text-muted)" }}>
                 <Ico path='<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>' size={14}/>
               </div>
               <span style={{ fontSize:14, fontWeight:700, color:"var(--text-primary)" }}>Deadlines</span>
             </div>
-            <button onClick={() => navigate("/pending-activities")} style={{ fontSize:12, color:"var(--green-700)", fontWeight:600, cursor:"pointer", padding:"4px 10px", borderRadius:6, border:"1px solid var(--green-200)", background:"var(--green-50)" }}>View all →</button>
+            <button onClick={() => navigate("/pending-activities")} style={{ fontSize:12, color:"var(--text-secondary)", fontWeight:500, cursor:"pointer", padding:"4px 10px", borderRadius:6, border:"1px solid var(--border-color)", background:"transparent" }}>View all →</button>
           </div>
           <div style={{ padding:"8px 0" }}>
             {upcomingDeadlines.length === 0 ? (
@@ -238,20 +231,23 @@ export default function Dashboard() {
               </div>
             ) : upcomingDeadlines.slice(0,5).map((d,i) => {
               const date = new Date(d.dueDate);
-              const status = daysLeft(d.dueDate);
+              const diff = Math.ceil((date - now) / 86400000);
+              const isOverdue = diff < 0;
+              const badgeColor = isOverdue ? "#dc2626" : "var(--text-muted)";
+              const badgeBg    = isOverdue ? "#fee2e2"  : "var(--bg-tertiary)";
+              const badgeLabel = isOverdue ? `${Math.abs(diff)}d overdue` : diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : `${diff}d left`;
               return (
                 <div key={d.courseWorkId||i} style={{ padding:"10px 16px", borderBottom:i<upcomingDeadlines.length-1?"1px solid var(--border-color)":"none", display:"flex", gap:10, alignItems:"center" }}>
-                  {/* Date block */}
                   <div style={{ width:40, textAlign:"center", flexShrink:0, background:"var(--bg-tertiary)", borderRadius:10, padding:"5px 4px", border:"1px solid var(--border-color)" }}>
                     <div style={{ fontSize:9, fontWeight:700, color:"var(--text-muted)", textTransform:"uppercase" }}>{date.toLocaleDateString("en-PH",{month:"short"})}</div>
-                    <div style={{ fontSize:20, fontWeight:800, color:"var(--text-primary)", lineHeight:1 }}>{date.getDate()}</div>
+                    <div style={{ fontSize:20, fontWeight:800, color: isOverdue ? "#dc2626" : "var(--text-primary)", lineHeight:1 }}>{date.getDate()}</div>
                     <div style={{ fontSize:8.5, color:"var(--text-muted)" }}>{date.toLocaleDateString("en-PH",{weekday:"short"})}</div>
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:13, fontWeight:600, color:"var(--text-primary)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", marginBottom:2 }}>{d.title}</div>
                     <div style={{ fontSize:11.5, color:"var(--text-muted)" }}>{d.courseName}</div>
                   </div>
-                  <span style={{ flexShrink:0, background:status.bg, color:status.color, fontSize:10.5, fontWeight:700, borderRadius:6, padding:"3px 8px" }}>{status.label}</span>
+                  <span style={{ flexShrink:0, background:badgeBg, color:badgeColor, fontSize:10.5, fontWeight:700, borderRadius:6, padding:"3px 8px", border: isOverdue ? "1px solid #fecaca" : "1px solid var(--border-color)" }}>{badgeLabel}</span>
                 </div>
               );
             })}
