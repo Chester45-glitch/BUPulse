@@ -125,7 +125,10 @@ router.get("/google/callback", async (req, res) => {
 <body>
   <div class="check">✅</div>
   <p>Login successful!</p>
-  <small>You can close this tab and return to BUPulse.</small>
+  <small>Returning to BUPulse2026</small>
+  <script>
+    setTimeout(() => { window.close(); }, 1500);
+  </script>
 </body>
 </html>`);
     }
