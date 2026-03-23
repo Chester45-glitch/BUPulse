@@ -13,6 +13,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const loginCodeRef = useRef(null);
+  const checkingRef = useRef(false);
 
   const fetchUser = useCallback(async () => {
     const token = localStorage.getItem("bupulse_token");
@@ -30,10 +31,14 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => { fetchUser(); }, [fetchUser]);
 
-  // Check backend for token using loginCode
   const checkForToken = useCallback(async () => {
+    // Prevent concurrent checks
+    if (checkingRef.current) return;
+    checkingRef.current = true;
+
     const code = loginCodeRef.current;
-    if (!code) return;
+    if (!code) { checkingRef.current = false; return; }
+
     const apiBase = import.meta.env.VITE_API_URL || "";
     try {
       const res = await fetch(`${apiBase}/api/auth/poll?code=${code}`);
@@ -41,54 +46,49 @@ export const AuthProvider = ({ children }) => {
       if (data.ready && data.token) {
         loginCodeRef.current = null;
         localStorage.setItem("bupulse_token", data.token);
-        // Directly set user from the token response
-        const userRes = await fetch(`${apiBase}/api/auth/me`, {
-          headers: { Authorization: `Bearer ${data.token}` }
-        });
-        const userData = await userRes.json();
-        if (userData.user) {
-          setUser(userData.user);
-          setLoading(false);
-        }
+        await fetchUser();
       }
     } catch (e) {
-      console.warn("Poll check failed:", e);
+      console.warn("Poll failed:", e);
+    } finally {
+      checkingRef.current = false;
     }
-  }, []);
+  }, [fetchUser]);
 
-  // Listen for app coming back to foreground AND browser closing
+  // Use visibilitychange — most reliable cross-platform event
+  // Fires when Chrome Custom Tab closes and WebView becomes visible again
+  useEffect(() => {
+    const handleVisible = () => {
+      if (document.visibilityState === "visible") {
+        checkForToken();
+      }
+    };
+    const handleFocus = () => checkForToken();
+
+    document.addEventListener("visibilitychange", handleVisible);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisible);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [checkForToken]);
+
+  // Also use Capacitor events as backup
   useEffect(() => {
     if (!isCapacitor()) return;
-
     let appHandle, browserHandle;
-
     (async () => {
       try {
         const { App } = await import("@capacitor/app");
         const { Browser } = await import("@capacitor/browser");
-
-        // Fires when Chrome Custom Tab is closed (user taps back or it auto-closes)
-        browserHandle = await Browser.addListener("browserFinished", async () => {
-          console.log("Browser closed — checking for token...");
-          await checkForToken();
+        browserHandle = await Browser.addListener("browserFinished", checkForToken);
+        appHandle = await App.addListener("appStateChange", ({ isActive }) => {
+          if (isActive) checkForToken();
         });
-
-        // Fires when app comes back to foreground from any reason
-        appHandle = await App.addListener("appStateChange", async ({ isActive }) => {
-          if (isActive) {
-            console.log("App active — checking for token...");
-            await checkForToken();
-          }
-        });
-      } catch (e) {
-        console.warn("Listener setup failed:", e);
-      }
+      } catch {}
     })();
-
-    return () => {
-      appHandle?.remove?.();
-      browserHandle?.remove?.();
-    };
+    return () => { appHandle?.remove?.(); browserHandle?.remove?.(); };
   }, [checkForToken]);
 
   const login = async (role = "student") => {
