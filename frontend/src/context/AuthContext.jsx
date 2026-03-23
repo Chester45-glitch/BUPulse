@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import api from "../utils/api";
-import { openAuthUrl, closeAuthBrowser } from "../utils/capacitorUtils";
+import { openAuthUrl } from "../utils/capacitorUtils";
 
 const AuthContext = createContext(null);
 
@@ -12,7 +12,7 @@ const makeCode = () => Math.random().toString(36).slice(2) + Date.now().toString
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const pollRef = useRef(null);
+  const loginCodeRef = useRef(null);
 
   const fetchUser = useCallback(async () => {
     const token = localStorage.getItem("bupulse_token");
@@ -30,54 +30,72 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => { fetchUser(); }, [fetchUser]);
 
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
+  // Check backend for token using loginCode
+  const checkForToken = useCallback(async () => {
+    const code = loginCodeRef.current;
+    if (!code) return;
+    const apiBase = import.meta.env.VITE_API_URL || "";
+    try {
+      const res = await fetch(`${apiBase}/api/auth/poll?code=${code}`);
+      const data = await res.json();
+      if (data.ready && data.token) {
+        loginCodeRef.current = null;
+        localStorage.setItem("bupulse_token", data.token);
+        // Directly set user from the token response
+        const userRes = await fetch(`${apiBase}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${data.token}` }
+        });
+        const userData = await userRes.json();
+        if (userData.user) {
+          setUser(userData.user);
+          setLoading(false);
+        }
+      }
+    } catch (e) {
+      console.warn("Poll check failed:", e);
     }
   }, []);
 
-  useEffect(() => () => stopPolling(), [stopPolling]);
+  // Listen for app coming back to foreground AND browser closing
+  useEffect(() => {
+    if (!isCapacitor()) return;
 
-  const startPolling = useCallback((loginCode) => {
-    stopPolling();
-    const apiBase = import.meta.env.VITE_API_URL || "";
-    let attempts = 0;
+    let appHandle, browserHandle;
 
-    pollRef.current = setInterval(async () => {
-      attempts++;
-      if (attempts > 150) { stopPolling(); return; }
-
+    (async () => {
       try {
-        const res = await fetch(`${apiBase}/api/auth/poll?code=${loginCode}`);
-        const data = await res.json();
+        const { App } = await import("@capacitor/app");
+        const { Browser } = await import("@capacitor/browser");
 
-        if (data.ready && data.token) {
-          stopPolling();
+        // Fires when Chrome Custom Tab is closed (user taps back or it auto-closes)
+        browserHandle = await Browser.addListener("browserFinished", async () => {
+          console.log("Browser closed — checking for token...");
+          await checkForToken();
+        });
 
-          // 1. Save token
-          localStorage.setItem("bupulse_token", data.token);
+        // Fires when app comes back to foreground from any reason
+        appHandle = await App.addListener("appStateChange", async ({ isActive }) => {
+          if (isActive) {
+            console.log("App active — checking for token...");
+            await checkForToken();
+          }
+        });
+      } catch (e) {
+        console.warn("Listener setup failed:", e);
+      }
+    })();
 
-          // 2. Close browser first
-          await closeAuthBrowser();
-
-          // 3. Small delay to let browser fully close
-          await new Promise(r => setTimeout(r, 500));
-
-          // 4. Fetch user — triggers re-render → App.jsx redirects to dashboard
-          const userRes = await api.get("/auth/me");
-          setUser(userRes.data.user);
-          setLoading(false);
-        }
-      } catch {}
-    }, 2000);
-  }, [stopPolling]);
+    return () => {
+      appHandle?.remove?.();
+      browserHandle?.remove?.();
+    };
+  }, [checkForToken]);
 
   const login = async (role = "student") => {
     const apiBase = import.meta.env.VITE_API_URL || "";
     if (isCapacitor()) {
       const loginCode = makeCode();
-      startPolling(loginCode);
+      loginCodeRef.current = loginCode;
       await openAuthUrl(`${apiBase}/api/auth/google?role=${role}&platform=android&code=${loginCode}`);
     } else {
       window.location.href = `${apiBase}/api/auth/google?role=${role}`;
@@ -85,7 +103,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    stopPolling();
+    loginCodeRef.current = null;
     try { await api.post("/auth/logout"); } catch {}
     localStorage.removeItem("bupulse_token");
     setUser(null);
