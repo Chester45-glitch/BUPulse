@@ -1,8 +1,11 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import api from "../utils/api";
-import { openAuthUrl, closeAuthBrowser } from "../utils/capacitorUtils";
+import { openAuthUrl } from "../utils/capacitorUtils";
 
 const AuthContext = createContext(null);
+
+const isCapacitor = () =>
+  typeof window !== "undefined" && typeof window.Capacitor !== "undefined";
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -24,53 +27,50 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => { fetchUser(); }, [fetchUser]);
 
-  // ── Capacitor deep-link listener ─────────────────────────────────
-  // Fires when Android intercepts edu.bicol.bupulse://auth/callback?token=xxx
+  // ── Deep link listener ────────────────────────────────────────────
   useEffect(() => {
-    if (typeof window === "undefined" || typeof window.Capacitor === "undefined") return;
+    if (!isCapacitor()) return;
 
-    let appHandle, browserHandle;
+    let appHandle;
 
     (async () => {
       try {
-        // Listen for deep link (app URL open)
         const { App } = await import("@capacitor/app");
+        const { Browser } = await import("@capacitor/browser");
+
         appHandle = await App.addListener("appUrlOpen", async (data) => {
           const url = data.url || "";
+          console.log("appUrlOpen fired:", url);
+
           if (!url.includes("auth/callback")) return;
 
-          const params = new URLSearchParams(url.split("?")[1] || "");
+          // Extract token from deep link
+          const parts = url.split("?");
+          const params = new URLSearchParams(parts[1] || "");
           const token = params.get("token");
+
           if (token) {
-            // Close the Chrome Custom Tab first
-            await closeAuthBrowser();
+            console.log("Token received, logging in...");
             localStorage.setItem("bupulse_token", token);
-            fetchUser();
+
+            // Close the in-app browser FIRST
+            try { await Browser.close(); } catch {}
+
+            // Then fetch user — this triggers re-render and navigation
+            await fetchUser();
           }
         });
-
-        // Also listen for browser finish (fallback)
-        const { Browser } = await import("@capacitor/browser");
-        browserHandle = await Browser.addListener("browserFinished", () => {
-          // If browser closed, re-check if token was saved
-          const token = localStorage.getItem("bupulse_token");
-          if (token && !user) fetchUser();
-        });
       } catch (e) {
-        console.warn("Capacitor listener setup failed:", e);
+        console.warn("Deep link listener error:", e);
       }
     })();
 
-    return () => {
-      appHandle?.remove?.();
-      browserHandle?.remove?.();
-    };
+    return () => { appHandle?.remove?.(); };
   }, [fetchUser]);
 
   const login = async (role = "student") => {
     const apiBase = import.meta.env.VITE_API_URL || "";
-    const isCapacitor = typeof window !== "undefined" && typeof window.Capacitor !== "undefined";
-    const url = isCapacitor
+    const url = isCapacitor()
       ? `${apiBase}/api/auth/google?role=${role}&platform=android`
       : `${apiBase}/api/auth/google?role=${role}`;
     await openAuthUrl(url);
