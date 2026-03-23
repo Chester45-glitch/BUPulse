@@ -7,7 +7,6 @@ const AuthContext = createContext(null);
 const isCapacitor = () =>
   typeof window !== "undefined" && typeof window.Capacitor !== "undefined";
 
-// Generate random login code
 const makeCode = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 
 export const AuthProvider = ({ children }) => {
@@ -31,55 +30,55 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => { fetchUser(); }, [fetchUser]);
 
-  // Stop polling helper
-  const stopPolling = () => {
+  const stopPolling = useCallback(() => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
-  };
+  }, []);
 
-  // Start polling backend for token after opening browser
+  useEffect(() => () => stopPolling(), [stopPolling]);
+
   const startPolling = useCallback((loginCode) => {
     stopPolling();
     const apiBase = import.meta.env.VITE_API_URL || "";
     let attempts = 0;
-    const maxAttempts = 150; // poll for up to 5 minutes
 
     pollRef.current = setInterval(async () => {
       attempts++;
-      if (attempts > maxAttempts) {
-        stopPolling();
-        return;
-      }
+      if (attempts > 150) { stopPolling(); return; }
+
       try {
         const res = await fetch(`${apiBase}/api/auth/poll?code=${loginCode}`);
         const data = await res.json();
+
         if (data.ready && data.token) {
           stopPolling();
+
+          // 1. Save token
           localStorage.setItem("bupulse_token", data.token);
-          // Close the in-app browser
+
+          // 2. Close browser first
           await closeAuthBrowser();
-          // Fetch user and update state
-          await fetchUser();
+
+          // 3. Small delay to let browser fully close
+          await new Promise(r => setTimeout(r, 500));
+
+          // 4. Fetch user — triggers re-render → App.jsx redirects to dashboard
+          const userRes = await api.get("/auth/me");
+          setUser(userRes.data.user);
+          setLoading(false);
         }
       } catch {}
-    }, 2000); // every 2 seconds
-  }, [fetchUser]);
-
-  // Cleanup on unmount
-  useEffect(() => () => stopPolling(), []);
+    }, 2000);
+  }, [stopPolling]);
 
   const login = async (role = "student") => {
     const apiBase = import.meta.env.VITE_API_URL || "";
-
     if (isCapacitor()) {
-      // Generate unique code for this login attempt
       const loginCode = makeCode();
-      const url = `${apiBase}/api/auth/google?role=${role}&platform=android&code=${loginCode}`;
-      // Start polling BEFORE opening browser
       startPolling(loginCode);
-      await openAuthUrl(url);
+      await openAuthUrl(`${apiBase}/api/auth/google?role=${role}&platform=android&code=${loginCode}`);
     } else {
       window.location.href = `${apiBase}/api/auth/google?role=${role}`;
     }
