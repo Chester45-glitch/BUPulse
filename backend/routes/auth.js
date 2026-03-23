@@ -46,7 +46,6 @@ router.get("/google", (req, res) => {
       "https://www.googleapis.com/auth/drive.file",
       "https://www.googleapis.com/auth/forms.body",
     ],
-    // Pass role + platform through OAuth state param
     state: `${role}|${platform}`,
   });
   res.redirect(authUrl);
@@ -92,46 +91,42 @@ router.get("/google/callback", async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    // ── Android: serve an HTML bridge page that bounces token into app ──
-    // Google only allows https:// redirect URIs, so we can't redirect directly
-    // to edu.bicol.bupulse://. Instead we serve a tiny HTML page that
-    // immediately opens the deep-link — the Android OS intercepts it and
-    // hands control back to the BUPulse app.
     if (oauthPlatform === "android") {
-      const deepLink = `edu.bicol.bupulse://auth/callback?token=${token}`;
+      // Use Android intent:// scheme — the most reliable way to return
+      // from a Chrome Custom Tab back into the native app.
+      // Chrome intercepts this and launches the app via the intent system.
+      const intentUrl = `intent://auth/callback?token=${token}#Intent;scheme=edu.bicol.bupulse;package=edu.bicol.bupulse;end`;
+
       return res.send(`<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Signing you in to BUPulse…</title>
+  <title>Signing in to BUPulse…</title>
   <style>
-    body { margin: 0; display: flex; flex-direction: column; align-items: center;
-           justify-content: center; min-height: 100vh; background: #0f2010;
-           font-family: system-ui, sans-serif; color: #a8c5a0; gap: 16px; }
-    .spinner { width: 44px; height: 44px; border: 3px solid rgba(255,255,255,0.15);
-               border-top-color: #f59e0b; border-radius: 50%;
-               animation: spin 0.8s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    p { font-size: 15px; margin: 0; }
-    a { color: #4ade80; font-size: 13px; margin-top: 8px; }
+    body { margin:0; display:flex; flex-direction:column; align-items:center;
+           justify-content:center; min-height:100vh; background:#0f2010;
+           font-family:system-ui,sans-serif; color:#a8c5a0; gap:16px; }
+    .spinner { width:44px; height:44px; border:3px solid rgba(255,255,255,0.15);
+               border-top-color:#f59e0b; border-radius:50%;
+               animation:spin 0.8s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    p { font-size:15px; margin:0; }
+    a { color:#4ade80; font-size:13px; margin-top:8px; }
   </style>
 </head>
 <body>
   <div class="spinner"></div>
   <p>Signing you in to BUPulse…</p>
-  <a href="${deepLink}">Tap here if the app doesn't open</a>
+  <a href="${intentUrl}">Tap here if the app doesn't open</a>
   <script>
-    // Immediately redirect to the app via deep-link
-    window.location.href = "${deepLink}";
-    // Fallback: close the browser tab after 3s (Capacitor Browser plugin handles this)
-    setTimeout(() => { window.close(); }, 3000);
+    // intent:// scheme reliably returns Chrome Custom Tab back to the Android app
+    window.location.href = "${intentUrl}";
   </script>
 </body>
 </html>`);
     }
 
-    // Web: normal redirect to Vercel frontend
     res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${token}`);
   } catch (err) {
     console.error("Auth error:", err);
@@ -147,7 +142,6 @@ router.get("/me", authenticateToken, async (req, res) => {
       .eq("id", req.user.id)
       .is("deleted_at", null)
       .single();
-
     if (!user) return res.status(404).json({ error: "User not found" });
     res.json({ user });
   } catch {
@@ -167,13 +161,10 @@ router.delete("/account", authenticateToken, async (req, res) => {
         notifications_enabled: false,
       })
       .eq("id", userId);
-
     if (userErr) throw userErr;
-
     await supabase.from("parent_links").delete().or(`parent_id.eq.${userId},student_id.eq.${userId}`);
     await supabase.from("chatbot_conversations").delete().eq("user_id", userId);
     await supabase.from("notification_logs").delete().eq("user_id", userId);
-
     res.json({ success: true, message: "Account deleted successfully" });
   } catch (err) {
     console.error("Delete account error:", err);
