@@ -2,16 +2,19 @@
   "appId": "edu.bicol.bupulse",
   "appName": "BUPulse",
   "webDir": "dist",
+  "server": {
+    "url": "https://bu-pulse.vercel.app",
+    "cleartext": false
+  },
   "android": {
     "allowMixedContent": false,
     "captureInput": true,
-    "webContentsDebuggingEnabled": true
+    "webContentsDebuggingEnabled": false
   },
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 2000,
       "backgroundColor": "#0f2010",
-      "androidSplashResourceName": "splash",
       "showSpinner": false,
       "splashFullScreen": true,
       "splashImmersive": true
@@ -19,11 +22,6 @@
     "StatusBar": {
       "style": "dark",
       "backgroundColor": "#0f2010"
-    },
-    "Keyboard": {
-      "resize": "body",
-      "style": "dark",
-      "resizeOnFullScreen": true
     }
   }
 }
