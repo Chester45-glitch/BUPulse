@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import api from "../utils/api";
 import { openAuthUrl } from "../utils/capacitorUtils";
 
@@ -9,11 +9,11 @@ const isCapacitor = () =>
 
 const makeCode = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 
+const POLL_KEY = "bupulse_login_code";
+
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
+  const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
-  const loginCodeRef = useRef(null);
-  const checkingRef = useRef(false);
 
   const fetchUser = useCallback(async () => {
     const token = localStorage.getItem("bupulse_token");
@@ -31,79 +31,84 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => { fetchUser(); }, [fetchUser]);
 
+  // Poll backend for token — called on every app resume / visibility change
   const checkForToken = useCallback(async () => {
-    // Prevent concurrent checks
-    if (checkingRef.current) return;
-    checkingRef.current = true;
-
-    const code = loginCodeRef.current;
-    if (!code) { checkingRef.current = false; return; }
+    const code = localStorage.getItem(POLL_KEY);
+    if (!code) return;
 
     const apiBase = import.meta.env.VITE_API_URL || "";
     try {
-      const res = await fetch(`${apiBase}/api/auth/poll?code=${code}`);
+      const res  = await fetch(`${apiBase}/api/auth/poll?code=${code}`);
       const data = await res.json();
       if (data.ready && data.token) {
-        loginCodeRef.current = null;
+        localStorage.removeItem(POLL_KEY);
         localStorage.setItem("bupulse_token", data.token);
         await fetchUser();
       }
-    } catch (e) {
-      console.warn("Poll failed:", e);
-    } finally {
-      checkingRef.current = false;
-    }
+    } catch {}
   }, [fetchUser]);
 
-  // Use visibilitychange — most reliable cross-platform event
-  // Fires when Chrome Custom Tab closes and WebView becomes visible again
+  // Poll every second for 30s after the component mounts or code is set
+  // This runs independently of Capacitor events
   useEffect(() => {
-    const handleVisible = () => {
-      if (document.visibilityState === "visible") {
-        checkForToken();
-      }
+    let interval = null;
+    let count = 0;
+
+    const tick = async () => {
+      const code = localStorage.getItem(POLL_KEY);
+      if (!code) { clearInterval(interval); return; }
+      count++;
+      if (count > 30) { clearInterval(interval); localStorage.removeItem(POLL_KEY); return; }
+      await checkForToken();
     };
-    const handleFocus = () => checkForToken();
 
-    document.addEventListener("visibilitychange", handleVisible);
-    window.addEventListener("focus", handleFocus);
+    interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [checkForToken]);
 
+  // visibilitychange — works when Chrome Custom Tab closes
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === "visible") checkForToken();
+    };
+    document.addEventListener("visibilitychange", handler);
+    window.addEventListener("focus", handler);
     return () => {
-      document.removeEventListener("visibilitychange", handleVisible);
-      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handler);
+      window.removeEventListener("focus", handler);
     };
   }, [checkForToken]);
 
-  // Also use Capacitor events as backup
+  // Capacitor events as backup
   useEffect(() => {
     if (!isCapacitor()) return;
-    let appHandle, browserHandle;
+    let h1, h2;
     (async () => {
       try {
-        const { App } = await import("@capacitor/app");
+        const { App }     = await import("@capacitor/app");
         const { Browser } = await import("@capacitor/browser");
-        browserHandle = await Browser.addListener("browserFinished", checkForToken);
-        appHandle = await App.addListener("appStateChange", ({ isActive }) => {
+        h1 = await Browser.addListener("browserFinished", checkForToken);
+        h2 = await App.addListener("appStateChange", ({ isActive }) => {
           if (isActive) checkForToken();
         });
       } catch {}
     })();
-    return () => { appHandle?.remove?.(); browserHandle?.remove?.(); };
+    return () => { h1?.remove?.(); h2?.remove?.(); };
   }, [checkForToken]);
 
   const login = async (role = "student") => {
     const apiBase = import.meta.env.VITE_API_URL || "";
     if (isCapacitor()) {
-      const loginCode = makeCode();
-      loginCodeRef.current = loginCode;
-      await openAuthUrl(`${apiBase}/api/auth/google?role=${role}&platform=android&code=${loginCode}`);
+      const code = makeCode();
+      localStorage.setItem(POLL_KEY, code);   // persist in localStorage!
+      await openAuthUrl(`${apiBase}/api/auth/google?role=${role}&platform=android&code=${code}`);
     } else {
       window.location.href = `${apiBase}/api/auth/google?role=${role}`;
     }
   };
 
   const logout = async () => {
-    loginCodeRef.current = null;
+    localStorage.removeItem(POLL_KEY);
     try { await api.post("/auth/logout"); } catch {}
     localStorage.removeItem("bupulse_token");
     setUser(null);
