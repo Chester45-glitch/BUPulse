@@ -12,6 +12,13 @@ const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_REDIRECT_URI
 );
 
+// In-memory token store for mobile polling (auto-clears after 5 min)
+const pendingTokens = new Map();
+const storePendingToken = (code, token) => {
+  pendingTokens.set(code, token);
+  setTimeout(() => pendingTokens.delete(code), 5 * 60 * 1000);
+};
+
 const detectRole = async (accessToken, refreshToken, requestedRole) => {
   if (requestedRole === "parent") return "parent";
   try {
@@ -29,7 +36,9 @@ const detectRole = async (accessToken, refreshToken, requestedRole) => {
 router.get("/google", (req, res) => {
   const role = req.query.role || "student";
   const platform = req.query.platform || "web";
+  const loginCode = req.query.code || "";
   req.session.oauthPlatform = platform;
+  req.session.loginCode = loginCode;
 
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: "offline", prompt: "consent",
@@ -46,15 +55,17 @@ router.get("/google", (req, res) => {
       "https://www.googleapis.com/auth/drive.file",
       "https://www.googleapis.com/auth/forms.body",
     ],
-    state: `${role}|${platform}`,
+    state: `${role}|${platform}|${loginCode}`,
   });
   res.redirect(authUrl);
 });
 
 router.get("/google/callback", async (req, res) => {
   const { code, state } = req.query;
-  const [requestedRole, platform] = (state || "student|web").split("|");
-  const oauthPlatform = platform || req.session?.oauthPlatform || "web";
+  const parts = (state || "student|web|").split("|");
+  const requestedRole = parts[0] || "student";
+  const oauthPlatform = parts[1] || "web";
+  const loginCode = parts[2] || req.session?.loginCode || "";
 
   try {
     const { tokens } = await oauth2Client.getToken(code);
@@ -80,7 +91,6 @@ router.get("/google/callback", async (req, res) => {
       .single();
 
     if (error) throw error;
-
     if (user.deleted_at) {
       return res.redirect(`${process.env.FRONTEND_URL}/?error=account_deleted`);
     }
@@ -91,47 +101,51 @@ router.get("/google/callback", async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    if (oauthPlatform === "android") {
-      // Use Android intent:// scheme — the most reliable way to return
-      // from a Chrome Custom Tab back into the native app.
-      // Chrome intercepts this and launches the app via the intent system.
-      const intentUrl = `intent://auth/callback?token=${token}#Intent;scheme=edu.bicol.bupulse;package=edu.bicol.bupulse;end`;
+    // ── Android polling flow ─────────────────────────────────────
+    if (oauthPlatform === "android" && loginCode) {
+      // Store token so the app can pick it up by polling
+      storePendingToken(loginCode, token);
 
+      // Show a success page — the app is polling and will close this automatically
       return res.send(`<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Signing in to BUPulse…</title>
+  <title>Login Successful</title>
   <style>
     body { margin:0; display:flex; flex-direction:column; align-items:center;
            justify-content:center; min-height:100vh; background:#0f2010;
-           font-family:system-ui,sans-serif; color:#a8c5a0; gap:16px; }
-    .spinner { width:44px; height:44px; border:3px solid rgba(255,255,255,0.15);
-               border-top-color:#f59e0b; border-radius:50%;
-               animation:spin 0.8s linear infinite; }
-    @keyframes spin { to { transform:rotate(360deg); } }
-    p { font-size:15px; margin:0; }
-    a { color:#4ade80; font-size:13px; margin-top:8px; }
+           font-family:system-ui,sans-serif; color:#a8c5a0; gap:16px; text-align:center; }
+    .check { font-size:56px; }
+    p { font-size:16px; margin:0; }
+    small { font-size:13px; color:rgba(255,255,255,0.4); margin-top:4px; }
   </style>
 </head>
 <body>
-  <div class="spinner"></div>
-  <p>Signing you in to BUPulse…</p>
-  <a href="${intentUrl}">Tap here if the app doesn't open</a>
-  <script>
-    // intent:// scheme reliably returns Chrome Custom Tab back to the Android app
-    window.location.href = "${intentUrl}";
-  </script>
+  <div class="check">✅</div>
+  <p>Login successful!</p>
+  <small>You can close this tab and return to BUPulse.</small>
 </body>
 </html>`);
     }
 
+    // ── Web flow ─────────────────────────────────────────────────
     res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${token}`);
   } catch (err) {
     console.error("Auth error:", err);
     res.redirect(`${process.env.FRONTEND_URL}/?error=auth_failed`);
   }
+});
+
+// ── Polling endpoint — app calls this every 2s after opening browser ──
+router.get("/poll", (req, res) => {
+  const { code } = req.query;
+  if (!code) return res.json({ ready: false });
+  const token = pendingTokens.get(code);
+  if (!token) return res.json({ ready: false });
+  pendingTokens.delete(code); // consume it
+  res.json({ ready: true, token });
 });
 
 router.get("/me", authenticateToken, async (req, res) => {
@@ -172,8 +186,6 @@ router.delete("/account", authenticateToken, async (req, res) => {
   }
 });
 
-router.post("/logout", (req, res) => {
-  res.json({ success: true });
-});
+router.post("/logout", (req, res) => { res.json({ success: true }); });
 
 module.exports = router;
