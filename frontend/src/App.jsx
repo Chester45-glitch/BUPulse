@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { HashRouter, BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -14,6 +14,12 @@ import Schedule from "./pages/Schedule";
 import Attendance from "./pages/Attendance";
 import Layout from "./components/Layout";
 
+
+
+// Use HashRouter for Capacitor (file:// protocol), BrowserRouter for web
+const Router = typeof window !== "undefined" && typeof window.Capacitor !== "undefined"
+  ? HashRouter
+  : BrowserRouter;
 const Spinner = () => (
   <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0f2010", flexDirection: "column", gap: 16 }}>
     <div style={{ width: 48, height: 48, border: "3px solid rgba(255,255,255,0.15)", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
@@ -48,7 +54,7 @@ export default function App() {
   if (loading) return <Spinner />;
 
   return (
-    <BrowserRouter>
+    <Router>
       <Routes>
         <Route path="/" element={user ? <RoleRedirect /> : <Login />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
@@ -85,6 +91,6 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+    </Router>
   );
 }
