@@ -14,6 +14,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Always read token from localStorage and fetch user
   const fetchUser = useCallback(async () => {
     const token = localStorage.getItem("bupulse_token");
     if (!token) { setLoading(false); return; }
@@ -30,7 +31,16 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => { fetchUser(); }, [fetchUser]);
 
-  const checkForToken = useCallback(async () => {
+  // Called when app comes back to foreground — ALWAYS re-fetch user from localStorage
+  const onAppResume = useCallback(async () => {
+    // If token already in storage but user state is null, restore session
+    const token = localStorage.getItem("bupulse_token");
+    if (token && !user) {
+      await fetchUser();
+      return;
+    }
+
+    // Otherwise check if there's a pending login to complete
     const code = localStorage.getItem(POLL_KEY);
     if (!code) return;
 
@@ -41,41 +51,15 @@ export const AuthProvider = ({ children }) => {
       if (data.ready && data.token) {
         localStorage.removeItem(POLL_KEY);
         localStorage.setItem("bupulse_token", data.token);
-
-        // ✅ Close the browser FIRST before updating state
-        if (isCapacitor()) {
-          try {
-            const { Browser } = await import("@capacitor/browser");
-            await Browser.close();
-          } catch {}
-        }
-
-        // Small delay to let browser fully close before re-rendering
-        await new Promise(r => setTimeout(r, 300));
-
-        // Now update user state → triggers navigation to dashboard
         await fetchUser();
       }
     } catch {}
-  }, [fetchUser]);
+  }, [fetchUser, user]);
 
-  // Poll every second while login code exists
-  useEffect(() => {
-    let count = 0;
-    const interval = setInterval(async () => {
-      const code = localStorage.getItem(POLL_KEY);
-      if (!code) { clearInterval(interval); return; }
-      count++;
-      if (count > 60) { clearInterval(interval); localStorage.removeItem(POLL_KEY); return; }
-      await checkForToken();
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [checkForToken]);
-
-  // visibilitychange backup
+  // visibilitychange — fires when Chrome Custom Tab closes and app is visible again
   useEffect(() => {
     const handler = () => {
-      if (document.visibilityState === "visible") checkForToken();
+      if (document.visibilityState === "visible") onAppResume();
     };
     document.addEventListener("visibilitychange", handler);
     window.addEventListener("focus", handler);
@@ -83,9 +67,9 @@ export const AuthProvider = ({ children }) => {
       document.removeEventListener("visibilitychange", handler);
       window.removeEventListener("focus", handler);
     };
-  }, [checkForToken]);
+  }, [onAppResume]);
 
-  // Capacitor events backup
+  // Capacitor events
   useEffect(() => {
     if (!isCapacitor()) return;
     let h1, h2;
@@ -93,14 +77,38 @@ export const AuthProvider = ({ children }) => {
       try {
         const { App }     = await import("@capacitor/app");
         const { Browser } = await import("@capacitor/browser");
-        h1 = await Browser.addListener("browserFinished", checkForToken);
+        h1 = await Browser.addListener("browserFinished", onAppResume);
         h2 = await App.addListener("appStateChange", ({ isActive }) => {
-          if (isActive) checkForToken();
+          if (isActive) onAppResume();
         });
       } catch {}
     })();
     return () => { h1?.remove?.(); h2?.remove?.(); };
-  }, [checkForToken]);
+  }, [onAppResume]);
+
+  // Background poll while login code exists
+  useEffect(() => {
+    let count = 0;
+    const interval = setInterval(async () => {
+      const code = localStorage.getItem(POLL_KEY);
+      if (!code) { clearInterval(interval); return; }
+      count++;
+      if (count > 150) { clearInterval(interval); localStorage.removeItem(POLL_KEY); return; }
+
+      const apiBase = import.meta.env.VITE_API_URL || "";
+      try {
+        const res  = await fetch(`${apiBase}/api/auth/poll?code=${code}`);
+        const data = await res.json();
+        if (data.ready && data.token) {
+          clearInterval(interval);
+          localStorage.removeItem(POLL_KEY);
+          localStorage.setItem("bupulse_token", data.token);
+          // Token saved — onAppResume will pick it up when browser closes
+        }
+      } catch {}
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
   const login = async (role = "student") => {
     const apiBase = import.meta.env.VITE_API_URL || "";
