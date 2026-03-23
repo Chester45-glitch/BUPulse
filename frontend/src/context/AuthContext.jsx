@@ -8,7 +8,6 @@ const isCapacitor = () =>
   typeof window !== "undefined" && typeof window.Capacitor !== "undefined";
 
 const makeCode = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
-
 const POLL_KEY = "bupulse_login_code";
 
 export const AuthProvider = ({ children }) => {
@@ -31,7 +30,6 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => { fetchUser(); }, [fetchUser]);
 
-  // Poll backend for token — called on every app resume / visibility change
   const checkForToken = useCallback(async () => {
     const code = localStorage.getItem(POLL_KEY);
     if (!code) return;
@@ -43,30 +41,38 @@ export const AuthProvider = ({ children }) => {
       if (data.ready && data.token) {
         localStorage.removeItem(POLL_KEY);
         localStorage.setItem("bupulse_token", data.token);
+
+        // ✅ Close the browser FIRST before updating state
+        if (isCapacitor()) {
+          try {
+            const { Browser } = await import("@capacitor/browser");
+            await Browser.close();
+          } catch {}
+        }
+
+        // Small delay to let browser fully close before re-rendering
+        await new Promise(r => setTimeout(r, 300));
+
+        // Now update user state → triggers navigation to dashboard
         await fetchUser();
       }
     } catch {}
   }, [fetchUser]);
 
-  // Poll every second for 30s after the component mounts or code is set
-  // This runs independently of Capacitor events
+  // Poll every second while login code exists
   useEffect(() => {
-    let interval = null;
     let count = 0;
-
-    const tick = async () => {
+    const interval = setInterval(async () => {
       const code = localStorage.getItem(POLL_KEY);
       if (!code) { clearInterval(interval); return; }
       count++;
-      if (count > 30) { clearInterval(interval); localStorage.removeItem(POLL_KEY); return; }
+      if (count > 60) { clearInterval(interval); localStorage.removeItem(POLL_KEY); return; }
       await checkForToken();
-    };
-
-    interval = setInterval(tick, 1000);
+    }, 1000);
     return () => clearInterval(interval);
   }, [checkForToken]);
 
-  // visibilitychange — works when Chrome Custom Tab closes
+  // visibilitychange backup
   useEffect(() => {
     const handler = () => {
       if (document.visibilityState === "visible") checkForToken();
@@ -79,7 +85,7 @@ export const AuthProvider = ({ children }) => {
     };
   }, [checkForToken]);
 
-  // Capacitor events as backup
+  // Capacitor events backup
   useEffect(() => {
     if (!isCapacitor()) return;
     let h1, h2;
@@ -100,7 +106,7 @@ export const AuthProvider = ({ children }) => {
     const apiBase = import.meta.env.VITE_API_URL || "";
     if (isCapacitor()) {
       const code = makeCode();
-      localStorage.setItem(POLL_KEY, code);   // persist in localStorage!
+      localStorage.setItem(POLL_KEY, code);
       await openAuthUrl(`${apiBase}/api/auth/google?role=${role}&platform=android&code=${code}`);
     } else {
       window.location.href = `${apiBase}/api/auth/google?role=${role}`;
