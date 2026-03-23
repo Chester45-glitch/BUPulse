@@ -28,6 +28,12 @@ const detectRole = async (accessToken, refreshToken, requestedRole) => {
 
 router.get("/google", (req, res) => {
   const role = req.query.role || "student";
+  // MOBILE PATCH: encode mobile_redirect into state param
+  const mobileRedirect = req.query.mobile_redirect || null;
+  const state = mobileRedirect
+    ? JSON.stringify({ role, mobile_redirect: mobileRedirect })
+    : role;
+
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: "offline", prompt: "consent",
     scope: [
@@ -43,13 +49,25 @@ router.get("/google", (req, res) => {
       "https://www.googleapis.com/auth/drive.file",
       "https://www.googleapis.com/auth/forms.body",
     ],
-    state: role,
+    state,
   });
   res.redirect(authUrl);
 });
 
 router.get("/google/callback", async (req, res) => {
-  const { code, state: requestedRole } = req.query;
+  const { code, state: rawState } = req.query;
+
+  // MOBILE PATCH: decode state to get role and mobile_redirect
+  let requestedRole = "student";
+  let mobileRedirect = null;
+  try {
+    const parsed = JSON.parse(rawState);
+    requestedRole = parsed.role || "student";
+    mobileRedirect = parsed.mobile_redirect || null;
+  } catch {
+    requestedRole = rawState || "student";
+  }
+
   try {
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
@@ -67,7 +85,7 @@ router.get("/google/callback", async (req, res) => {
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token || null,
         role,
-        deleted_at: null, // re-activate if soft deleted
+        deleted_at: null,
         updated_at: new Date().toISOString(),
       }, { onConflict: "google_id" })
       .select()
@@ -75,9 +93,11 @@ router.get("/google/callback", async (req, res) => {
 
     if (error) throw error;
 
-    // Block soft-deleted accounts
     if (user.deleted_at) {
-      return res.redirect(`${process.env.FRONTEND_URL}/?error=account_deleted`);
+      const errUrl = mobileRedirect
+        ? `${mobileRedirect}?error=account_deleted`
+        : `${process.env.FRONTEND_URL}/?error=account_deleted`;
+      return res.redirect(errUrl);
     }
 
     const token = jwt.sign(
@@ -86,14 +106,22 @@ router.get("/google/callback", async (req, res) => {
       { expiresIn: "7d" }
     );
 
+    // MOBILE PATCH: if mobile app login, redirect to deep link with token
+    if (mobileRedirect) {
+      return res.redirect(`${mobileRedirect}?token=${token}`);
+    }
+
+    // Web login stays the same
     res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${token}`);
   } catch (err) {
     console.error("Auth error:", err);
-    res.redirect(`${process.env.FRONTEND_URL}/?error=auth_failed`);
+    const errUrl = mobileRedirect
+      ? `${mobileRedirect}?error=auth_failed`
+      : `${process.env.FRONTEND_URL}/?error=auth_failed`;
+    res.redirect(errUrl);
   }
 });
 
-// Get current user (includes all notification preferences)
 router.get("/me", authenticateToken, async (req, res) => {
   try {
     const { data: user } = await supabase
@@ -102,7 +130,6 @@ router.get("/me", authenticateToken, async (req, res) => {
       .eq("id", req.user.id)
       .is("deleted_at", null)
       .single();
-
     if (!user) return res.status(404).json({ error: "User not found" });
     res.json({ user });
   } catch {
@@ -110,36 +137,17 @@ router.get("/me", authenticateToken, async (req, res) => {
   }
 });
 
-// ── DELETE /api/auth/account ─────────────────────────────────
-// Soft-delete: sets deleted_at timestamp, clears tokens
 router.delete("/account", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-
-    // 1. Soft-delete the user (keeps row for data integrity)
     const { error: userErr } = await supabase
       .from("users")
-      .update({
-        deleted_at: new Date().toISOString(),
-        access_token: null,
-        refresh_token: null,
-        notifications_enabled: false,
-      })
+      .update({ deleted_at: new Date().toISOString(), access_token: null, refresh_token: null, notifications_enabled: false })
       .eq("id", userId);
-
     if (userErr) throw userErr;
-
-    // 2. Delete linked parent relationships
-    await supabase.from("parent_links")
-      .delete()
-      .or(`parent_id.eq.${userId},student_id.eq.${userId}`);
-
-    // 3. Delete chatbot history
+    await supabase.from("parent_links").delete().or(`parent_id.eq.${userId},student_id.eq.${userId}`);
     await supabase.from("chatbot_conversations").delete().eq("user_id", userId);
-
-    // 4. Delete notification logs
     await supabase.from("notification_logs").delete().eq("user_id", userId);
-
     res.json({ success: true, message: "Account deleted successfully" });
   } catch (err) {
     console.error("Delete account error:", err);

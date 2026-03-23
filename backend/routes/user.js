@@ -66,3 +66,19 @@ router.delete("/account", authenticateToken, async (req, res) => {
 });
 
 module.exports = router;
+
+// GET /api/user/me — used by mobile app
+router.get("/me", authenticateToken, async (req, res) => {
+  try {
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("id, email, name, picture, role, notifications_enabled")
+      .eq("id", req.user.id)
+      .is("deleted_at", null)
+      .single();
+    if (error || !user) return res.status(404).json({ error: "User not found" });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch user" });
+  }
+});
