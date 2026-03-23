@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useAuth } from "../context/AuthContext";
 
 const StudentIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -56,12 +55,9 @@ export default function Login() {
     if (p.get("error")) setError("Login failed. Please try again.");
   }, []);
 
-  const { login } = useAuth();
-
-  const handleLogin = async () => {
+  const handleLogin = () => {
     setLoading(true);
-    await login(role);
-    setLoading(false);
+    window.location.href = `${import.meta.env.VITE_API_URL}/api/auth/google?role=${role}`;
   };
 
   return (

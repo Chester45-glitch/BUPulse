@@ -53,6 +53,7 @@ export default function App() {
         <Route path="/" element={user ? <RoleRedirect /> : <Login />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
 
+        {/* ── Student routes ─────────────────────────────────────── */}
         <Route path="/" element={<PrivateRoute allowedRoles={["student"]}><Layout /></PrivateRoute>}>
           <Route path="dashboard"          element={<Dashboard />} />
           <Route path="announcements"      element={<Announcements />} />
@@ -64,6 +65,7 @@ export default function App() {
           <Route path="attendance"         element={<Attendance />} />
         </Route>
 
+        {/* ── Professor routes ────────────────────────────────────── */}
         <Route path="/professor" element={<PrivateRoute allowedRoles={["professor"]}><Layout role="professor" /></PrivateRoute>}>
           <Route index                element={<ProfessorDashboard />} />
           <Route path="announcements" element={<Announcements role="professor" />} />
@@ -74,6 +76,7 @@ export default function App() {
           <Route path="attendance"    element={<Attendance />} />
         </Route>
 
+        {/* ── Parent routes ───────────────────────────────────────── */}
         <Route path="/parent" element={<PrivateRoute allowedRoles={["parent"]}><Layout role="parent" /></PrivateRoute>}>
           <Route index              element={<ParentDashboard />} />
           <Route path="profile"     element={<Profile />} />

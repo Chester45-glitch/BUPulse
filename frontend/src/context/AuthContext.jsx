@@ -23,9 +23,9 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => { fetchUser(); }, [fetchUser]);
 
-  const login = async (role = "student") => {
-    const apiBase = import.meta.env.VITE_API_URL || "";
-    window.location.href = `${apiBase}/api/auth/google?role=${role}`;
+  const login = async () => {
+    const res = await api.get("/auth/google");
+    window.location.href = res.data.url;
   };
 
   const logout = async () => {
