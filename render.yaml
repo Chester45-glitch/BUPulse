@@ -1,19 +1,16 @@
 services:
   - type: web
     name: bupulse-backend
-    runtime: node
+    env: node
     plan: free
-    # Fix: 'rootDir' is the correct YAML key, not 'rootDirectory'
     rootDir: backend
+    buildpacks:
+      - url: https://github.com/render-examples/render-buildpack-google-chrome
+      - url: render/node
     buildCommand: npm install
     startCommand: node server.js
     envVars:
       - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
-        value: true
+        value: "true"
       - key: PUPPETEER_EXECUTABLE_PATH
         value: /usr/bin/google-chrome-stable
-    # Note: If 'buildpacks' still shows an error in the UI preview, 
-    # it is often a linter bug; try to 'Apply' anyway.
-    buildpacks:
-      - url: https://github.com/render-examples/render-buildpack-google-chrome
-      - url: render/node
