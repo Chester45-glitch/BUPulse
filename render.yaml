@@ -4,12 +4,12 @@ services:
     runtime: node
     # Add this line so Render knows where the backend code is
     rootDirectory: backend 
-    buildCommand: npm install
+    buildCommand: apt-get update && apt-get install -y chromium-browser && npm install
     startCommand: node server.js
     envVars:
       - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
         value: true
       - key: PUPPETEER_EXECUTABLE_PATH
-        value: /usr/bin/google-chrome-stable
+        value: /usr/bin/chromium-browser
     buildpacks:
       - url: https://github.com/render-examples/render-buildpack-google-chrome
