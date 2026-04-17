@@ -7,3 +7,9 @@ services:
     envVars:
       - key: PORT
         value: 10000
+      - key: SUPABASE_URL
+        sync: false # Render will ask you to type this in the dashboard
+      - key: SUPABASE_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
