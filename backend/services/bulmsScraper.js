@@ -2,61 +2,40 @@ const puppeteer = require('puppeteer');
 const { encryptData, decryptData } = require('../middleware/encryption');
 const supabase = require('../db/supabase');
 
-async function linkBulmsAccount(userId, username, password) {
-    // PRODUCTION CONFIG: Headless must be true (new)
-    const browser = await puppeteer.launch({ 
-        headless: "new", 
-        args: [
-            '--no-sandbox', 
-            '--disable-setuid-sandbox',
-            '--single-process',
-            '--no-zygote'
-        ],
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
-    });
-    
-    const page = await browser.newPage();
-
+// NEW: Function to link using a manually provided cookie
+async function linkBulmsWithCookie(userId, sessionCookie) {
     try {
-        await page.goto('https://bulms.bicol-u.edu.ph/login/index.php', { waitUntil: 'networkidle2' });
+        // We structure the cookie exactly how Puppeteer needs it
+        const cookies = [{
+            name: 'MoodleSession',
+            value: sessionCookie,
+            domain: 'bulms.bicol-u.edu.ph',
+            path: '/',
+            httpOnly: true,
+            secure: true
+        }];
 
-        console.log("Attempting automated login for:", username);
-        
-        // Type credentials into Moodle login form
-        await page.type('#username', username);
-        await page.type('#password', password);
-        
-        // Click Login and wait for navigation
-        await Promise.all([
-            page.click('#loginbtn'),
-            page.waitForNavigation({ waitUntil: 'networkidle2' }),
-        ]);
-
-        // Check if login failed (Moodle stays on login page or shows alert)
-        const loginFailed = await page.$('.alert-danger');
-        if (loginFailed) {
-            throw new Error("Invalid BU credentials. Please check your username/password.");
-        }
-
-        console.log("Login successful! Capturing cookies...");
-        const cookies = await page.cookies();
         const encryptedCookies = encryptData(JSON.stringify(cookies));
 
         const { error } = await supabase
             .from('user_credentials')
-            .upsert({ user_id: userId, bulms_cookies: encryptedCookies, status: 'connected' });
+            .upsert({ 
+                user_id: userId, 
+                bulms_cookies: encryptedCookies, 
+                status: 'connected' 
+            });
 
         if (error) throw error;
 
-        return { success: true, message: "Account linked successfully." };
+        // Immediately try a test sync to see if the cookie works
+        return await autoSyncBulmsData(userId);
     } catch (error) {
-        console.error("Link error:", error.message);
-        return { success: false, message: error.message };
-    } finally {
-        await browser.close();
+        console.error("Manual link error:", error.message);
+        return { success: false, message: "Invalid session cookie. Please try again." };
     }
 }
 
+// Keep your existing autoSyncBulmsData function here...
 async function autoSyncBulmsData(userId) {
     const { data: userCreds, error } = await supabase
         .from('user_credentials')
@@ -71,8 +50,10 @@ async function autoSyncBulmsData(userId) {
 
     const browser = await puppeteer.launch({ 
         headless: "new", 
-        args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--single-process', '--no-zygote'],
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
     });
+    
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
@@ -80,9 +61,13 @@ async function autoSyncBulmsData(userId) {
         await page.setCookie(...rawCookies);
         await page.goto('https://bulms.bicol-u.edu.ph/my/', { waitUntil: 'networkidle2' });
         
-        // Moodle 4.x check
+        // Wait for timeline
         await page.evaluate(() => window.scrollBy(0, 1000));
         await new Promise(resolve => setTimeout(resolve, 5000)); 
+
+        // Check if the cookie actually worked
+        const isLoggedOut = await page.$('.login');
+        if (isLoggedOut) throw new Error("Session expired. Please re-link your account.");
 
         let { subjects, activities } = await page.evaluate(() => {
             const subjectLinks = Array.from(document.querySelectorAll('.dashboard-card .coursename, .coursebox .coursename'))
@@ -93,17 +78,14 @@ async function autoSyncBulmsData(userId) {
 
             const rawActivities = [];
             const listGroups = document.querySelectorAll('.list-group');
-            
             listGroups.forEach(group => {
                 const headerEl = group.previousElementSibling;
                 let dateStr = headerEl ? headerEl.innerText.trim() : "";
-                
                 const items = group.querySelectorAll('[data-region="event-list-item"]');
                 items.forEach(el => {
                     const titleEl = el.querySelector('.event-name, h6, [data-region="event-name"]');
                     const courseEl = el.querySelector('.text-muted, small, a[href*="course/view.php"]');
                     const timeEl = el.querySelector('.text-end, .text-right, [data-region="event-date"]');
-                    
                     if (titleEl) {
                         rawActivities.push({
                             title: (courseEl ? courseEl.innerText.trim() + " - " : "") + titleEl.innerText.trim(),
@@ -112,17 +94,16 @@ async function autoSyncBulmsData(userId) {
                     }
                 });
             });
-
             return { subjects: uniqueSubjects, activities: rawActivities };
         });
 
-        // Date cleaning
-        const today = new Date();
+        // Clean up dates
+        const currentYear = new Date().getFullYear();
         activities = activities.map(act => {
             let d = act.dueDate;
             if (d && d.includes(',')) {
                 d = d.substring(d.indexOf(',') + 1).trim();
-                if (!/\d{4}/.test(d)) d = d.replace(",", ` ${today.getFullYear()},`);
+                if (!/\d{4}/.test(d)) d = d.replace(",", ` ${currentYear},`);
             }
             return { ...act, dueDate: d };
         });
@@ -138,8 +119,4 @@ async function autoSyncBulmsData(userId) {
     }
 }
 
-async function markAccountDisconnected(userId) {
-    await supabase.from('user_credentials').update({ status: 'disconnected' }).eq('user_id', userId);
-}
-
-module.exports = { linkBulmsAccount, autoSyncBulmsData };
+module.exports = { linkBulmsWithCookie, autoSyncBulmsData };
