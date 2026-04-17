@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import api from "../utils/api";
+import { useAuth } from "../context/AuthContext";
 
 // ── Banner gradients (matches GC palette) ────────────────────────
 const BANNERS = [
@@ -62,7 +63,6 @@ function CourseCard({ course, index }) {
           animation: `fadeIn 0.3s ease ${index * 0.06}s both`,
         }}
       >
-        {/* Banner */}
         <div style={{ height: 96, background: banner.bg, position: "relative", padding: "14px 16px", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
           <div style={{ position: "absolute", inset: 0, opacity: 0.15, backgroundImage: "radial-gradient(circle,#fff 1px,transparent 1px)", backgroundSize: "18px 18px" }} />
           <div style={{ position: "relative" }}>
@@ -77,16 +77,13 @@ function CourseCard({ course, index }) {
           </div>
         </div>
 
-        {/* Body */}
         <div style={{ padding: "14px 16px", flex: 1, position: "relative" }}>
-          {/* Instructor avatar */}
           <div style={{ position: "absolute", top: -22, right: 16, width: 44, height: 44, borderRadius: "50%", background: "var(--card-bg)", border: "3px solid var(--card-bg)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "var(--shadow-md)" }}>
             <div style={{ width: 38, height: 38, borderRadius: "50%", background: banner.bg, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 13, fontWeight: 700 }}>
               {getInitials(course.name)}
             </div>
           </div>
 
-          {/* Instructor name — FIX: now shown via teacherName field */}
           <div style={{ marginBottom: 10, minHeight: 32, paddingTop: 2 }}>
             {course.teacherName ? (
               <>
@@ -104,7 +101,6 @@ function CourseCard({ course, index }) {
             ) : null}
           </div>
 
-          {/* Footer */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, paddingTop: 10, borderTop: "1px solid var(--border-color)" }}>
             <span style={{ background: "var(--green-50)", color: "var(--green-700)", fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, letterSpacing: "0.5px" }}>
               ACTIVE
@@ -124,25 +120,52 @@ function CourseCard({ course, index }) {
 
 // ── Page ─────────────────────────────────────────────────────────
 export default function EnrolledClasses() {
+  const { user } = useAuth();
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Show cached data immediately
     const cached = localStorage.getItem("bupulse_courses");
     if (cached) {
       try { setCourses(JSON.parse(cached)); } catch {}
     }
 
-    api.get("/classroom/courses")
-      .then((r) => {
-        const c = r.data.courses || [];
-        setCourses(c);
-        localStorage.setItem("bupulse_courses", JSON.stringify(c));
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
+    const fetchAllData = async () => {
+      try {
+        // Fetch both Google Classroom and BULMS data simultaneously
+        const [gcRes, bulmsRes] = await Promise.allSettled([
+          api.get("/classroom/courses"),
+          user?.id ? api.get(`/bulms/data?userId=${user.id}`) : Promise.resolve({ data: null })
+        ]);
+
+        let mergedCourses = [];
+
+        if (gcRes.status === "fulfilled" && gcRes.value.data.courses) {
+          mergedCourses = [...gcRes.value.data.courses];
+        }
+
+        if (bulmsRes.status === "fulfilled" && bulmsRes.value.data?.data?.subjects) {
+          const bulmsCourses = bulmsRes.value.data.data.subjects.map((sub, i) => ({
+            id: `bulms-course-${i}`,
+            name: sub,
+            alternateLink: 'https://bulms.bicol-u.edu.ph/my/',
+            teacherName: 'Bicol University LMS',
+            room: 'BULMS'
+          }));
+          mergedCourses = [...mergedCourses, ...bulmsCourses];
+        }
+
+        setCourses(mergedCourses);
+        localStorage.setItem("bupulse_courses", JSON.stringify(mergedCourses));
+      } catch (error) {
+        console.error("Error fetching courses", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAllData();
+  }, [user]);
 
   return (
     <div style={{ animation: "fadeIn 0.4s ease" }}>
