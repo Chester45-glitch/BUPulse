@@ -19,16 +19,14 @@ router.get('/status', async (req, res) => {
 });
 
 router.post('/link', async (req, res) => {
-    const { userId } = req.body;
-    if (!userId) return res.status(400).json({ error: "userId is required" });
+    const { userId, sessionCookie } = req.body;
+    if (!sessionCookie) return res.status(400).json({ error: "Cookie is required" });
 
-    const result = await linkBulmsAccount(userId);
-    if (result.success) {
-        // Automatically sync data right after linking!
-        await autoSyncBulmsData(userId);
-        res.status(200).json(result);
-    } else {
-        res.status(500).json(result);
+    try {
+        const result = await linkBulmsWithCookie(userId, sessionCookie);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
