@@ -41,40 +41,33 @@ const IconTrash = () => (
 // ── Advanced Formatter Component ────────────────────────────────
 const FormattedMessage = ({ content }) => {
   if (!content) return null;
-
-  // Split content by lines to handle bullets and spacing
   const lines = content.split('\n');
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
       {lines.map((line, idx) => {
-        // Handle Bullet Points
+        // Detect bullet points
         const isBullet = line.trim().startsWith('•') || line.trim().startsWith('- ');
-        const cleanLine = isBullet ? line.trim().substring(2) : line;
+        const cleanLine = isBullet ? line.trim().replace(/^[•-]\s*/, '') : line;
 
-        // Process bold and code inline
-        const parts = cleanLine.split(/(\*\*.*?\*\*|`.*?`)/g);
-        const processedLine = parts.map((part, i) => {
+        // Process bold text (**text**)
+        const parts = cleanLine.split(/(\*\*.*?\*\*)/g);
+        const processed = parts.map((part, i) => {
           if (part.startsWith('**') && part.endsWith('**')) {
             return <strong key={i} style={{ fontWeight: 800, color: "inherit" }}>{part.slice(2, -2)}</strong>;
-          }
-          if (part.startsWith('`') && part.endsWith('`')) {
-            return <code key={i} style={{ background: 'rgba(0,0,0,0.06)', padding: '2px 5px', borderRadius: '4px', fontSize: '0.9em', fontFamily: 'monospace' }}>{part.slice(1, -1)}</code>;
           }
           return part;
         });
 
         if (isBullet) {
           return (
-            <div key={idx} style={{ display: "flex", gap: "8px", paddingLeft: "4px" }}>
+            <div key={idx} style={{ display: "flex", gap: "8px", paddingLeft: "12px" }}>
               <span style={{ color: "var(--green-700)", fontWeight: "bold" }}>•</span>
-              <span style={{ flex: 1 }}>{processedLine}</span>
+              <span style={{ flex: 1 }}>{processed}</span>
             </div>
           );
         }
 
-        // Return regular line (or empty line for spacing)
-        return line.trim() === "" ? <div key={idx} style={{ height: "4px" }} /> : <div key={idx}>{processedLine}</div>;
+        return line.trim() === "" ? <div key={idx} style={{ height: "4px" }} /> : <div key={idx}>{processed}</div>;
       })}
     </div>
   );
@@ -113,9 +106,12 @@ const MessageBubble = ({ msg, isLast }) => {
       }}>
         {isBot ? <FormattedMessage content={msg.content} /> : msg.content}
         
-        {msg.file_url && (
+        {/* Support for both backend property naming conventions */}
+        {(msg.file_url || msg.fileUrl) && (
           <div style={{ marginTop: 12, padding: "10px", background: "rgba(0,0,0,0.05)", borderRadius: 8, fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
-            📎 <a href={msg.file_url} target="_blank" rel="noreferrer" style={{ color: "inherit", fontWeight: 700, textDecoration: "none" }}>{msg.file_name || "Attachment"}</a>
+            📎 <a href={msg.file_url || msg.fileUrl} target="_blank" rel="noreferrer" style={{ color: "inherit", fontWeight: 700, textDecoration: "none" }}>
+              {msg.file_name || msg.fileName || "Attachment"}
+            </a>
           </div>
         )}
       </div>
@@ -137,7 +133,7 @@ export default function AskPulsBot() {
     if (!window.confirm("Are you sure you want to clear your chat history? This cannot be undone.")) return;
     try {
       await clearChat();
-      // Forces a UI refresh to ensure local message state is truly empty
+      // Hard reload ensures no stale state remains in the production environment
       window.location.reload(); 
     } catch (err) {
       alert("Failed to clear chat. Please try again.");
@@ -147,7 +143,7 @@ export default function AskPulsBot() {
   const role = user?.role || "student";
   const suggestions = SUGGESTIONS[role] || SUGGESTIONS.student;
   
-  // Logic to show empty state if history is empty OR only contains a system greeting
+  // Refined empty state logic
   const isEmpty = messages.length === 0 || (messages.length === 1 && messages[0].role === "assistant" && !loading);
 
   return (
@@ -171,7 +167,11 @@ export default function AskPulsBot() {
             </div>
           </div>
         </div>
-        <button onClick={handleClear} style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px solid var(--card-border)", background: "transparent", color: "var(--text-muted)", fontSize: 12.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "0.2s" }}>
+        <button 
+          onClick={handleClear} 
+          disabled={messages.length === 0}
+          style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px solid var(--card-border)", background: "transparent", color: "var(--text-muted)", fontSize: 12.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "0.2s", opacity: messages.length === 0 ? 0.5 : 1 }}
+        >
           <IconTrash /> Clear Chat
         </button>
       </header>
@@ -210,7 +210,7 @@ export default function AskPulsBot() {
               <MessageBubble key={i} msg={m} isLast={i === messages.length - 1} />
             ))}
             {loading && (
-               <div style={{ display: "flex", gap: 10, paddingLeft: 4, color: "var(--text-muted)", fontSize: 13, fontWeight: 500 }}>
+               <div style={{ display: "flex", gap: 10, paddingLeft: 4, color: "var(--text-muted)", fontSize: 13, fontWeight: 500, marginBottom: 20 }}>
                   <div className="pulse-dot" /> PulsBot is typing...
                </div>
             )}
