@@ -1,7 +1,6 @@
 services:
   - type: web
     name: bupulse-backend
-    env: node
     plan: free
     rootDir: backend
     buildpacks:
