@@ -2,7 +2,8 @@ services:
   - type: web
     name: bupulse-backend
     runtime: node
-    rootDirectory: backend
+    # Add this line so Render knows where the backend code is
+    rootDirectory: backend 
     buildCommand: npm install
     startCommand: node server.js
     envVars:
