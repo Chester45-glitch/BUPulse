@@ -2,9 +2,9 @@ services:
   - type: web
     name: bupulse-backend
     runtime: node
-    plan: free
+    rootDirectory: backend
     buildCommand: npm install
-    startCommand: node index.js
+    startCommand: node server.js
     envVars:
       - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
         value: true
