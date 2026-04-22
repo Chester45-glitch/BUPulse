@@ -2,19 +2,19 @@
  * bulmsService.js — BUPulse BULMS Integration
  *
  * Puppeteer-powered scraper that:
- *  1. Opens a browser so the user can manually authenticate via Google SSO
- *  2. Captures and encrypts session cookies
- *  3. Scrapes subjects, activities, and due dates from Moodle
- *  4. Detects session expiry and marks the account as disconnected
+ * 1. Opens a browser so the user can manually authenticate via Google SSO
+ * 2. Captures and encrypts session cookies
+ * 3. Scrapes subjects, activities, and due dates from Moodle
+ * 4. Detects session expiry and marks the account as disconnected
  *
  * DEPLOYMENT NOTE:
- *  - Development: headless: false opens a real visible window — no setup needed.
- *  - Production server (Railway / Render / VPS):
- *      apt-get install -y xvfb chromium-browser
- *      PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
- *      Start server with: xvfb-run -a node server.js
- *    OR use headless: "new" (Chrome headless) with a display-less server.
- *    The BULMS_HEADLESS env var controls this (default: false for local dev).
+ * - Development: headless: false opens a real visible window — no setup needed.
+ * - Production server (Railway / Render / VPS):
+ * apt-get install -y xvfb chromium-browser
+ * PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ * Start server with: xvfb-run -a node server.js
+ * OR use headless: "new" (Chrome headless) with a display-less server.
+ * The BULMS_HEADLESS env var controls this (default: false for local dev).
  */
 
 const puppeteer  = require("puppeteer");
@@ -111,7 +111,8 @@ function isLoginPage(url) {
   return (
     url.includes("/login/index.php") ||
     url.includes("/login/oauth2") ||
-    url.includes("accounts.google.com")
+    url.includes("accounts.google.com") ||
+    url.includes("login")
   );
 }
 
@@ -119,6 +120,9 @@ function isLoginPage(url) {
 async function scrapeCourses(page) {
   try {
     await page.goto(`${BULMS_URL}/my/`, { waitUntil: "networkidle2", timeout: SCRAPE_TIMEOUT });
+
+    // FIX: Wait for Moodle's delayed JS redirects to finish
+    await new Promise(res => setTimeout(res, 3000));
 
     if (isLoginPage(page.url())) return null; // session expired
 
@@ -131,7 +135,10 @@ async function scrapeCourses(page) {
       ".my-course-item",
     ], 20_000);
 
-    const courses = await page.evaluate((baseUrl) => {
+    // FIX: One more small delay to ensure DOM is fully settled before evaluating
+    await new Promise(res => setTimeout(res, 1000));
+
+    const evaluateLogic = (baseUrl) => {
       const results = [];
 
       // Strategy 1: Moodle 4.x dashboard cards
@@ -195,9 +202,24 @@ async function scrapeCourses(page) {
         seen.add(c.course_id);
         return true;
       });
-    }, BULMS_URL);
+    };
 
-    return courses;
+    // FIX: Catch context destruction and retry automatically
+    let courses;
+    try {
+      courses = await page.evaluate(evaluateLogic, BULMS_URL);
+    } catch (evalErr) {
+      if (evalErr.message.includes("Execution context was destroyed")) {
+        console.log("[BULMS] Context destroyed in courses, waiting 3s to retry...");
+        await new Promise(res => setTimeout(res, 3000));
+        if (isLoginPage(page.url())) return null;
+        courses = await page.evaluate(evaluateLogic, BULMS_URL);
+      } else {
+        throw evalErr;
+      }
+    }
+
+    return courses || [];
   } catch (err) {
     console.error("[BULMS] scrapeCourses error:", err.message);
     return [];
@@ -210,11 +232,16 @@ async function scrapeActivitiesForCourse(page, courseId, courseUrl) {
     const url = courseUrl || `${BULMS_URL}/course/view.php?id=${courseId}`;
     await page.goto(url, { waitUntil: "networkidle2", timeout: SCRAPE_TIMEOUT });
 
+    // FIX: Add safety delay here as well
+    await new Promise(res => setTimeout(res, 2000));
+
     if (isLoginPage(page.url())) return null; // session expired
 
     await waitForAny(page, ["#region-main", ".course-content", ".topics", ".weeks"], 15_000);
 
-    const activities = await page.evaluate((cid, baseUrl) => {
+    await new Promise(res => setTimeout(res, 1000));
+
+    const evaluateLogic = (cid, baseUrl) => {
       const results = [];
 
       // ── Unified activity selector (works for most Moodle 3.x/4.x themes) ──
@@ -305,7 +332,22 @@ async function scrapeActivitiesForCourse(page, courseId, courseUrl) {
       });
 
       return results;
-    }, courseId, BULMS_URL);
+    };
+
+    // FIX: Catch context destruction for activities as well
+    let activities;
+    try {
+      activities = await page.evaluate(evaluateLogic, courseId, BULMS_URL);
+    } catch (evalErr) {
+      if (evalErr.message.includes("Execution context was destroyed")) {
+        console.log(`[BULMS] Context destroyed in activities for ${courseId}, waiting 3s...`);
+        await new Promise(res => setTimeout(res, 3000));
+        if (isLoginPage(page.url())) return null;
+        activities = await page.evaluate(evaluateLogic, courseId, BULMS_URL);
+      } else {
+        throw evalErr;
+      }
+    }
 
     return activities || [];
   } catch (err) {
