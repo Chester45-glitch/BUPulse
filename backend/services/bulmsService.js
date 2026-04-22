@@ -100,17 +100,22 @@ function isLoginPage(url) {
 // ── Bulletproof Course Scraper ───────────────────────────────────────────────
 async function scrapeCourses(page) {
   try {
-    await page.goto(`${BULMS_URL}/my/`, { waitUntil: "domcontentloaded", timeout: SCRAPE_TIMEOUT });
+    // networkidle2 ensures we wait out any initial aggressive login redirects
+    await page.goto(`${BULMS_URL}/my/`, { waitUntil: "networkidle2", timeout: SCRAPE_TIMEOUT });
 
     await new Promise(res => setTimeout(res, 3000));
     if (isLoginPage(page.url())) return null;
 
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => null);
     console.log(`[BULMS] Authenticated successfully. Waiting for courses to render...`);
 
-    await page.waitForFunction(() => {
-      return document.querySelectorAll("a[href*='course/view.php?id=']").length > 0;
-    }, { timeout: 15000 }).catch(() => console.log("[BULMS] Timeout waiting for course links. Checking fallbacks..."));
+    try {
+      await page.waitForFunction(() => {
+        return document.querySelectorAll("a[href*='course/view.php?id=']").length > 0;
+      }, { timeout: 15000 });
+    } catch (e) {
+      console.log("[BULMS] Timeout waiting for course links. Checking fallbacks...");
+    }
 
     await new Promise(res => setTimeout(res, 1500));
 
@@ -187,16 +192,37 @@ async function scrapeCourses(page) {
       }
     }
 
+    // ── FALLBACK TO COURSES.PHP (Now protected against context crashes) ──
     if (!courses || courses.length === 0) {
       console.log(`[BULMS] 0 courses on /my/, trying /my/courses.php...`);
-      await page.goto(`${BULMS_URL}/my/courses.php`, { waitUntil: "domcontentloaded", timeout: SCRAPE_TIMEOUT });
-      await new Promise(res => setTimeout(res, 3000));
-      await page.waitForFunction(() => { return document.querySelectorAll("a[href*='course/view.php?id=']").length > 0; }, { timeout: 10000 }).catch(() => null);
-      courses = await page.evaluate(evaluateLogic, BULMS_URL);
+      try {
+        await page.goto(`${BULMS_URL}/my/courses.php`, { waitUntil: "networkidle2", timeout: SCRAPE_TIMEOUT });
+        await new Promise(res => setTimeout(res, 3000));
+        
+        try {
+          await page.waitForFunction(() => { return document.querySelectorAll("a[href*='course/view.php?id=']").length > 0; }, { timeout: 10000 });
+        } catch(e) { }
+
+        // Added missing try/catch specifically for the fallback execution
+        try {
+          courses = await page.evaluate(evaluateLogic, BULMS_URL);
+        } catch (fallbackEvalErr) {
+          if (fallbackEvalErr.message.includes("Execution context was destroyed")) {
+            console.log(`[BULMS] Context destroyed on fallback. Waiting 3s to retry...`);
+            await new Promise(res => setTimeout(res, 3000));
+            courses = await page.evaluate(evaluateLogic, BULMS_URL);
+          } else {
+            throw fallbackEvalErr;
+          }
+        }
+      } catch (fallbackErr) {
+        console.log(`[BULMS] Fallback navigation error: ${fallbackErr.message}`);
+      }
     }
 
     if (!courses || courses.length === 0) {
-      const pageSnip = await page.evaluate(() => document.body.innerText.substring(0, 500).replace(/\n/g, ' '));
+      // Safe extraction that won't crash if it fails
+      const pageSnip = await page.evaluate(() => document.body.innerText.substring(0, 500).replace(/\n/g, ' ')).catch(() => "Could not extract text");
       console.log(`[BULMS DEBUG] No courses found. Page text snippet: ${pageSnip}`);
     }
 
@@ -206,7 +232,6 @@ async function scrapeCourses(page) {
     return [];
   }
 }
-
 // ── Scrape activities for a single course ─────────────────────────────────────
 async function scrapeActivitiesForCourse(page, courseId, courseUrl) {
   try {
