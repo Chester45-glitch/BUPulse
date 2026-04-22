@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import api from "../utils/api";
-import { useAuth } from "../context/AuthContext";
 
 // ── Helpers ──────────────────────────────────────────────────────
 const PALETTE = ["#2563eb","#16a34a","#7c3aed","#b45309","#0f766e","#be123c","#0284c7","#65a30d"];
@@ -92,6 +91,7 @@ function StreamCard({ item, index }) {
       onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 4px 14px rgba(0,0,0,0.09)")}
       onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,0.05)")}
     >
+      {/* Coloured course header */}
       <div style={{ background: color, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", inset: 0, opacity: 0.12, backgroundImage: "radial-gradient(circle,#fff 1px,transparent 1px)", backgroundSize: "16px 16px", pointerEvents: "none" }} />
         <div style={{ display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
@@ -107,12 +107,14 @@ function StreamCard({ item, index }) {
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, position: "relative", flexShrink: 0 }}>
           <span style={{ color: "rgba(255,255,255,0.75)", fontSize: 11 }}>{timeAgo(item.updateTime)}</span>
+          {/* Type badge */}
           <span style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}40`, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, display: "flex", alignItems: "center", gap: 4 }}>
             <cfg.Icon /> {cfg.label}
           </span>
         </div>
       </div>
 
+      {/* Body */}
       <div style={{ padding: "14px 16px" }}>
         {item.title && (
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>{item.title}</div>
@@ -130,6 +132,7 @@ function StreamCard({ item, index }) {
           </>
         )}
 
+        {/* Attachments */}
         {item.attachments?.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
             {item.attachments.map((att, i) => (
@@ -149,6 +152,7 @@ function StreamCard({ item, index }) {
           </div>
         )}
 
+        {/* Footer row */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 10, marginTop: 6, borderTop: "1px solid var(--border-color)", flexWrap: "wrap" }}>
           <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
             {new Date(item.updateTime || item.creationTime).toLocaleDateString("en-PH", {
@@ -197,7 +201,6 @@ function CoursePills({ courses, selected, onChange }) {
 
 // ── Announcements page ───────────────────────────────────────────
 export default function Announcements({ role }) {
-  const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -205,8 +208,8 @@ export default function Announcements({ role }) {
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [courseFilter, setCourseFilter] = useState("ALL");
 
-  const [editModal, setEditModal]   = useState(null); 
-  const [deleteModal, setDeleteModal] = useState(null); 
+  const [editModal, setEditModal]   = useState(null); // { item, courseId, annId, text }
+  const [deleteModal, setDeleteModal] = useState(null); // { item, courseId, annId }
   const [actionLoading, setActionLoading] = useState(false);
 
   const handleDelete = async () => {
@@ -231,55 +234,36 @@ export default function Announcements({ role }) {
     finally { setActionLoading(false); }
   };
 
+  // Use unified stream for students; legacy announcements for professors
   const isStudent = !role || role === "student";
   const streamEndpoint = isStudent ? "/classroom/stream" : "/professor/announcements";
 
-  const fetchItems = async (force = false) => {
+  const fetchItems = (force = false) => {
     const url = force ? `${streamEndpoint}?refresh=true` : streamEndpoint;
     if (force) setRefreshing(true); else setLoading(true);
 
-    try {
-      // Fetch both simultaneously
-      const [gcRes, bulmsRes] = await Promise.allSettled([
-        api.get(url),
-        user?.id ? api.get(`/bulms/data?userId=${user.id}`) : Promise.resolve({ data: null })
-      ]);
-
-      let mergedItems = [];
-
-      // Add Google Classroom Data
-      if (gcRes.status === "fulfilled") {
+    api.get(url)
+      .then((r) => {
         if (isStudent) {
-          mergedItems = [...(gcRes.value.data.items || [])];
+          setItems(r.data.items || []);
         } else {
-          mergedItems = (gcRes.value.data.announcements || []).map((a) => ({
-            ...a, id: `ann-${a.id}`, type: "ANNOUNCEMENT", title: null, attachments: a.attachments || []
-          }));
+          // Professor: wrap legacy announcements into stream format
+          setItems(
+            (r.data.announcements || []).map((a) => ({
+              ...a,
+              id: `ann-${a.id}`,
+              type: "ANNOUNCEMENT",
+              title: null,
+              attachments: a.attachments || [],
+            }))
+          );
         }
-      }
-
-      // Add BULMS Announcements (If future scraper version supports it)
-      if (bulmsRes.status === "fulfilled" && bulmsRes.value.data?.data?.announcements) {
-        const bulmsAnns = bulmsRes.value.data.data.announcements.map((ann, i) => ({
-          id: `bulms-ann-${i}`,
-          type: "ANNOUNCEMENT",
-          courseName: "Bicol University LMS",
-          text: ann.text || ann.title,
-          updateTime: new Date().toISOString(),
-          link: 'https://bulms.bicol-u.edu.ph/my/'
-        }));
-        mergedItems = [...mergedItems, ...bulmsAnns];
-      }
-
-      setItems(mergedItems);
-    } catch (error) {
-      console.error("Error fetching announcements:", error);
-    } finally {
-      setLoading(false); setRefreshing(false);
-    }
+      })
+      .catch(console.error)
+      .finally(() => { setLoading(false); setRefreshing(false); });
   };
 
-  useEffect(() => { fetchItems(); }, [streamEndpoint, user]);
+  useEffect(() => { fetchItems(); }, [streamEndpoint]);
 
   const courses = [...new Set(items.map((i) => i.courseName).filter(Boolean))].sort();
 
@@ -296,6 +280,7 @@ export default function Announcements({ role }) {
     return typeOk && courseOk && searchOk;
   });
 
+  // Counts per type
   const counts = items.reduce((acc, i) => {
     acc[i.type] = (acc[i.type] || 0) + 1;
     return acc;
@@ -304,6 +289,7 @@ export default function Announcements({ role }) {
   return (
     <div style={{ animation: "fadeIn 0.35s ease", maxWidth: 800, margin: "0 auto", width: "100%" }}>
 
+      {/* Header row */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
           <strong style={{ color: "var(--text-primary)" }}>{items.length}</strong> post{items.length !== 1 ? "s" : ""} across{" "}
@@ -322,6 +308,7 @@ export default function Announcements({ role }) {
         </button>
       </div>
 
+      {/* Type filter tabs */}
       <div style={{ display: "flex", gap: 6, marginBottom: 12, overflowX: "auto" }}>
         {[
           { key: "ALL", label: "All" },
@@ -350,6 +337,7 @@ export default function Announcements({ role }) {
         })}
       </div>
 
+      {/* Toolbar */}
       <div style={{ background: "var(--card-bg)", borderRadius: 12, border: "1px solid var(--card-border)", padding: "10px 12px", marginBottom: 12, display: "flex", gap: 8, alignItems: "center", boxShadow: "var(--shadow-sm)" }}>
         <div style={{ flex: 1, position: "relative", display: "flex", alignItems: "center" }}>
           <span style={{ position: "absolute", left: 10, color: "var(--text-muted)", pointerEvents: "none" }}><SearchIcon /></span>
@@ -364,12 +352,14 @@ export default function Announcements({ role }) {
         </div>
       </div>
 
+      {/* Course pills */}
       {courses.length > 1 && (
         <div style={{ marginBottom: 14 }}>
           <CoursePills courses={courses} selected={courseFilter} onChange={setCourseFilter} />
         </div>
       )}
 
+      {/* Content */}
       {loading ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {[...Array(3)].map((_, i) => (
@@ -387,7 +377,10 @@ export default function Announcements({ role }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {filtered.map((item, i) => {
+            // Extract real announcement ID (strip "ann-" prefix added for professor view)
+            // rawId: strip "ann-" prefix added during fetch normalization
             const rawId = item.id?.startsWith("ann-") ? item.id.slice(4) : item.id;
+            // courseId: use item.courseId or fall back to parsing from id
             const itemCourseId = item.courseId || null;
             return (
               <div key={item.id || i} style={{ position: "relative" }}>
@@ -412,54 +405,56 @@ export default function Announcements({ role }) {
         </div>
       )}
 
-      {editModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div style={{ background: "var(--card-bg)", borderRadius: 16, padding: 24, width: "100%", maxWidth: 520, boxShadow: "var(--shadow-xl)" }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>Edit Announcement</h3>
-            <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 16 }}>
-              {editModal.item.courseName}
-            </p>
-            <textarea
-              value={editModal.text}
-              onChange={e => setEditModal(m => ({ ...m, text: e.target.value }))}
-              rows={6}
-              style={{ width: "100%", border: "1.5px solid var(--card-border)", borderRadius: 10, padding: "10px 14px", fontSize: 14, resize: "vertical", outline: "none", lineHeight: 1.6, background: "var(--input-bg)", color: "var(--text-primary)", boxSizing: "border-box" }}
-            />
-            <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
-              <button onClick={() => setEditModal(null)} style={{ padding: "9px 18px", borderRadius: 9, border: "1px solid var(--card-border)", background: "transparent", color: "var(--text-muted)", fontSize: 13.5, cursor: "pointer" }}>
-                Cancel
-              </button>
-              <button onClick={handleEdit} disabled={actionLoading || !editModal.text.trim()}
-                style={{ padding: "9px 18px", borderRadius: 9, border: "none", background: "#16a34a", color: "#fff", fontSize: 13.5, fontWeight: 600, cursor: "pointer", opacity: actionLoading ? 0.6 : 1 }}>
-                {actionLoading ? "Saving…" : "Save changes"}
-              </button>
+      {/* Edit Modal */}
+        {editModal && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <div style={{ background: "var(--card-bg)", borderRadius: 16, padding: 24, width: "100%", maxWidth: 520, boxShadow: "var(--shadow-xl)" }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>Edit Announcement</h3>
+              <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 16 }}>
+                {editModal.item.courseName}
+              </p>
+              <textarea
+                value={editModal.text}
+                onChange={e => setEditModal(m => ({ ...m, text: e.target.value }))}
+                rows={6}
+                style={{ width: "100%", border: "1.5px solid var(--card-border)", borderRadius: 10, padding: "10px 14px", fontSize: 14, resize: "vertical", outline: "none", lineHeight: 1.6, background: "var(--input-bg)", color: "var(--text-primary)", boxSizing: "border-box" }}
+              />
+              <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
+                <button onClick={() => setEditModal(null)} style={{ padding: "9px 18px", borderRadius: 9, border: "1px solid var(--card-border)", background: "transparent", color: "var(--text-muted)", fontSize: 13.5, cursor: "pointer" }}>
+                  Cancel
+                </button>
+                <button onClick={handleEdit} disabled={actionLoading || !editModal.text.trim()}
+                  style={{ padding: "9px 18px", borderRadius: 9, border: "none", background: "#16a34a", color: "#fff", fontSize: 13.5, fontWeight: 600, cursor: "pointer", opacity: actionLoading ? 0.6 : 1 }}>
+                  {actionLoading ? "Saving…" : "Save changes"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {deleteModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div style={{ background: "var(--card-bg)", borderRadius: 16, padding: 24, width: "100%", maxWidth: 400, boxShadow: "var(--shadow-xl)" }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>Delete Announcement?</h3>
-            <p style={{ fontSize: 13.5, color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 20 }}>
-              This will permanently delete the announcement from Google Classroom. This cannot be undone.
-            </p>
-            <div style={{ background: "var(--bg-tertiary)", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: 13, color: "var(--text-secondary)", fontStyle: "italic", lineHeight: 1.5 }}>
-              "{deleteModal.item.text?.slice(0, 120)}{deleteModal.item.text?.length > 120 ? "…" : ""}"
-            </div>
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button onClick={() => setDeleteModal(null)} style={{ padding: "9px 18px", borderRadius: 9, border: "1px solid var(--card-border)", background: "transparent", color: "var(--text-muted)", fontSize: 13.5, cursor: "pointer" }}>
-                Cancel
-              </button>
-              <button onClick={handleDelete} disabled={actionLoading}
-                style={{ padding: "9px 18px", borderRadius: 9, border: "none", background: "#dc2626", color: "#fff", fontSize: 13.5, fontWeight: 600, cursor: "pointer", opacity: actionLoading ? 0.6 : 1 }}>
-                {actionLoading ? "Deleting…" : "Delete"}
-              </button>
+        {/* Delete Confirm Modal */}
+        {deleteModal && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <div style={{ background: "var(--card-bg)", borderRadius: 16, padding: 24, width: "100%", maxWidth: 400, boxShadow: "var(--shadow-xl)" }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>Delete Announcement?</h3>
+              <p style={{ fontSize: 13.5, color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 20 }}>
+                This will permanently delete the announcement from Google Classroom. This cannot be undone.
+              </p>
+              <div style={{ background: "var(--bg-tertiary)", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: 13, color: "var(--text-secondary)", fontStyle: "italic", lineHeight: 1.5 }}>
+                "{deleteModal.item.text?.slice(0, 120)}{deleteModal.item.text?.length > 120 ? "…" : ""}"
+              </div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button onClick={() => setDeleteModal(null)} style={{ padding: "9px 18px", borderRadius: 9, border: "1px solid var(--card-border)", background: "transparent", color: "var(--text-muted)", fontSize: 13.5, cursor: "pointer" }}>
+                  Cancel
+                </button>
+                <button onClick={handleDelete} disabled={actionLoading}
+                  style={{ padding: "9px 18px", borderRadius: 9, border: "none", background: "#dc2626", color: "#fff", fontSize: 13.5, fontWeight: 600, cursor: "pointer", opacity: actionLoading ? 0.6 : 1 }}>
+                  {actionLoading ? "Deleting…" : "Delete"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
       <style>{`
         @keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }

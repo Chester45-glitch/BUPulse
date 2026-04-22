@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import api from "../utils/api";
-import { useAuth } from "../context/AuthContext";
 
 const daysInfo = (dueDate) => {
   const d = Math.ceil((new Date(dueDate) - new Date()) / 86400000);
@@ -54,55 +53,17 @@ const WORK_TYPE_ICON = {
 };
 
 export default function PendingActivities() {
-  const { user } = useAuth();
   const [deadlines, setDeadlines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("ALL");
   const [courseFilter, setCourseFilter] = useState("ALL");
 
   useEffect(() => {
-    const fetchAllData = async () => {
-      try {
-        const [gcRes, bulmsRes] = await Promise.allSettled([
-          api.get("/classroom/deadlines"),
-          user?.id ? api.get(`/bulms/data?userId=${user.id}`) : Promise.resolve({ data: null })
-        ]);
-
-        let mergedDeadlines = [];
-
-        if (gcRes.status === "fulfilled" && gcRes.value.data.deadlines) {
-          mergedDeadlines = [...gcRes.value.data.deadlines];
-        }
-
-        if (bulmsRes.status === "fulfilled" && bulmsRes.value.data?.data?.activities) {
-          const bulmsActivities = bulmsRes.value.data.data.activities
-            .filter(act => !act.dueDate.toLowerCase().includes("no due date")) // Skip non-actionable items
-            .map((act, i) => {
-              let parsedDate = new Date(act.dueDate);
-              if (isNaN(parsedDate)) parsedDate = new Date(); // Fallback
-
-              return {
-                courseWorkId: `bulms-act-${i}`,
-                title: act.title,
-                courseName: 'Bicol University LMS',
-                dueDate: parsedDate.toISOString(),
-                workType: 'ASSIGNMENT', // Moodle events are generally treated as assignments
-                link: 'https://bulms.bicol-u.edu.ph/my/'
-              };
-            });
-          mergedDeadlines = [...mergedDeadlines, ...bulmsActivities];
-        }
-
-        setDeadlines(mergedDeadlines);
-      } catch (error) {
-        console.error("Error fetching deadlines", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAllData();
-  }, [user]);
+    api.get("/classroom/deadlines")
+      .then(r => setDeadlines(r.data.deadlines || []))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
 
   const now = new Date();
   const overdue = deadlines.filter(d => new Date(d.dueDate) < now);
@@ -118,11 +79,13 @@ export default function PendingActivities() {
   return (
     <div style={{ animation: "fadeIn 0.4s ease" }}>
 
+      {/* Info note */}
       <div style={{ background: "var(--green-50)", border: "1px solid var(--green-200)", borderRadius: 10, padding: "10px 14px", marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
         <div style={{ color: "var(--green-700)", flexShrink: 0 }}><IconCheckCircle /></div>
         <p style={{ fontSize: 13, color: "var(--green-700)" }}>Only showing <strong>unsubmitted</strong> activities. Already submitted work is automatically hidden.</p>
       </div>
 
+      {/* Summary cards */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 20 }}>
         <div style={{ background: "#fee2e2", borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ color: "#dc2626" }}><IconAlert /></div>
@@ -147,6 +110,7 @@ export default function PendingActivities() {
         </div>
       </div>
 
+      {/* Filters */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
         <div style={{ display: "flex", gap: 6 }}>
           {[["ALL", "All"], ["OVERDUE", "Overdue"], ["UPCOMING", "Upcoming"]].map(([val, label]) => (
@@ -190,22 +154,26 @@ export default function PendingActivities() {
                   animation: `fadeIn 0.3s ease ${i * 0.04}s both`,
                   display: "flex", alignItems: "center", gap: 12,
                 }}>
+                  {/* Type icon */}
                   <div style={{ width: 36, height: 36, borderRadius: 9, background: info.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: info.color }}>
                     <TypeIcon />
                   </div>
 
+                  {/* Date block */}
                   <div style={{ textAlign: "center", flexShrink: 0, background: "var(--bg-tertiary)", borderRadius: 10, padding: "4px 10px", minWidth: 44 }}>
                     <div style={{ fontSize: 9, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>{dueDate.toLocaleDateString("en-PH", { month: "short" })}</div>
                     <div style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", lineHeight: 1 }}>{dueDate.getDate()}</div>
                     <div style={{ fontSize: 9, color: "var(--text-muted)" }}>{dueDate.toLocaleDateString("en-PH", { weekday: "short" })}</div>
                   </div>
 
+                  {/* Info */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.title}</div>
                     <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.courseName}</div>
                     <span style={{ background: info.bg, color: info.color, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5 }}>{info.label}</span>
                   </div>
 
+                  {/* Open button */}
                   {d.link && (
                     <a href={d.link} target="_blank" rel="noopener noreferrer" style={{
                       padding: "8px 14px", borderRadius: 10,
