@@ -4,7 +4,7 @@
 
 const puppeteerExtra = require("puppeteer-extra");
 const StealthPlugin  = require("puppeteer-extra-plugin-stealth");
-puppeteerExtra.use(StealthPlugin()); // Activate stealth mode to bypass WAF 403s
+puppeteerExtra.use(StealthPlugin());
 
 const crypto     = require("crypto");
 const supabase   = require("../db/supabase");
@@ -12,7 +12,8 @@ const supabase   = require("../db/supabase");
 // ── Config ────────────────────────────────────────────────────────────────────
 const BULMS_URL        = process.env.BULMS_URL        || "https://bulms.bicol-u.edu.ph";
 const BULMS_LOGIN_URL  = `${BULMS_URL}/login/index.php`;
-const BULMS_MY_URL     = `${BULMS_URL}/my/`;
+// FIX 1: Point directly to the Bicol U Site Home you provided!
+const BULMS_HOME_URL   = `${BULMS_URL}/?redirect=0`; 
 const COOKIE_KEY       = process.env.BULMS_COOKIE_KEY || null; 
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;  
 const SCRAPE_TIMEOUT   = 60_000;          
@@ -66,7 +67,6 @@ async function launchBrowser(headless = IS_HEADLESS) {
     "--disable-blink-features=AutomationControlled",
     "--start-maximized"
   ];
-  // Use puppeteerExtra instead of standard puppeteer
   const browser = await puppeteerExtra.launch({
     headless: headless ? "new" : false,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
@@ -100,8 +100,9 @@ function isLoginPage(url) {
 // ── Bulletproof Course Scraper ───────────────────────────────────────────────
 async function scrapeCourses(page) {
   try {
-    // networkidle2 ensures we wait out any initial aggressive login redirects
-    await page.goto(`${BULMS_URL}/my/`, { waitUntil: "networkidle2", timeout: SCRAPE_TIMEOUT });
+    // FIX 2: Go directly to the Site Home instead of the dashboard
+    console.log(`[BULMS] Navigating to Site Home...`);
+    await page.goto(BULMS_HOME_URL, { waitUntil: "networkidle2", timeout: SCRAPE_TIMEOUT });
 
     await new Promise(res => setTimeout(res, 3000));
     if (isLoginPage(page.url())) return null;
@@ -114,7 +115,7 @@ async function scrapeCourses(page) {
         return document.querySelectorAll("a[href*='course/view.php?id=']").length > 0;
       }, { timeout: 15000 });
     } catch (e) {
-      console.log("[BULMS] Timeout waiting for course links. Checking fallbacks...");
+      console.log("[BULMS] Timeout waiting for course links on Site Home. Checking Fallbacks...");
     }
 
     await new Promise(res => setTimeout(res, 1500));
@@ -139,7 +140,7 @@ async function scrapeCourses(page) {
         if (data.isMenuLink && !isMenuLink) data.isMenuLink = false;
 
         if (!data.card && !isMenuLink) {
-          data.card = a.closest('.card, .coursebox, .dashboard-card, .my-course-item, [data-region="course-events-container"]');
+          data.card = a.closest('.card, .coursebox, .dashboard-card, .my-course-item, [data-region="course-events-container"], .course_category_tree');
         }
 
         const text = a.textContent.trim();
@@ -192,18 +193,17 @@ async function scrapeCourses(page) {
       }
     }
 
-    // ── FALLBACK TO COURSES.PHP (Now protected against context crashes) ──
+    // FIX 3: Replaced the forbidden /courses.php fallback with the /my/ dashboard
     if (!courses || courses.length === 0) {
-      console.log(`[BULMS] 0 courses on /my/, trying /my/courses.php...`);
+      console.log(`[BULMS] 0 courses on Site Home, trying /my/ dashboard...`);
       try {
-        await page.goto(`${BULMS_URL}/my/courses.php`, { waitUntil: "networkidle2", timeout: SCRAPE_TIMEOUT });
+        await page.goto(`${BULMS_URL}/my/`, { waitUntil: "networkidle2", timeout: SCRAPE_TIMEOUT });
         await new Promise(res => setTimeout(res, 3000));
         
         try {
           await page.waitForFunction(() => { return document.querySelectorAll("a[href*='course/view.php?id=']").length > 0; }, { timeout: 10000 });
         } catch(e) { }
 
-        // Added missing try/catch specifically for the fallback execution
         try {
           courses = await page.evaluate(evaluateLogic, BULMS_URL);
         } catch (fallbackEvalErr) {
@@ -221,7 +221,6 @@ async function scrapeCourses(page) {
     }
 
     if (!courses || courses.length === 0) {
-      // Safe extraction that won't crash if it fails
       const pageSnip = await page.evaluate(() => document.body.innerText.substring(0, 500).replace(/\n/g, ' ')).catch(() => "Could not extract text");
       console.log(`[BULMS DEBUG] No courses found. Page text snippet: ${pageSnip}`);
     }
@@ -232,6 +231,7 @@ async function scrapeCourses(page) {
     return [];
   }
 }
+
 // ── Scrape activities for a single course ─────────────────────────────────────
 async function scrapeActivitiesForCourse(page, courseId, courseUrl) {
   try {
@@ -341,7 +341,7 @@ async function startLinkSession(userId, sessionToken) {
     const loginSuccess = await page.waitForFunction(
       (myUrl) => {
         const url = window.location.href;
-        return (url.includes("/my/") || url.includes("/dashboard") || document.querySelector(".usermenu, [data-key=\"myhome\"], #page-site-index, .dashboard-card, #page-my-index") !== null);
+        return (url.includes("/my/") || url.includes("/dashboard") || url.includes("redirect=0") || document.querySelector(".usermenu, [data-key=\"myhome\"], #page-site-index, .dashboard-card, #page-my-index") !== null);
       },
       { timeout: LOGIN_TIMEOUT_MS }
     ).catch(() => null);
@@ -436,7 +436,8 @@ async function syncUserData(userId, triggeredBy = "auto") {
       try { await page.setCookie({ ...cookie, domain }); } catch {} 
     }
 
-    await page.goto(BULMS_MY_URL, { waitUntil: "domcontentloaded", timeout: SCRAPE_TIMEOUT });
+    // FIX 4: Send the scraper to BULMS_HOME_URL instead of BULMS_MY_URL for the initial bootup
+    await page.goto(BULMS_HOME_URL, { waitUntil: "domcontentloaded", timeout: SCRAPE_TIMEOUT });
 
     if (isLoginPage(page.url())) {
       await supabase.from("bulms_sessions").update({ status: "expired", updated_at: new Date().toISOString() }).eq("user_id", userId);
@@ -505,7 +506,8 @@ async function validateSession(userId) {
     const page = await browser.newPage();
     const domain = new URL(BULMS_URL).hostname;
     for (const c of cookies) { try { await page.setCookie({ ...c, domain }); } catch {} }
-    await page.goto(BULMS_MY_URL, { waitUntil: "domcontentloaded", timeout: 20_000 });
+    // FIX 5: Validate via Site Home
+    await page.goto(BULMS_HOME_URL, { waitUntil: "domcontentloaded", timeout: 20_000 });
     const valid = !isLoginPage(page.url());
     if (!valid) await supabase.from("bulms_sessions").update({ status: "expired", updated_at: new Date().toISOString() }).eq("user_id", userId);
     return valid;
