@@ -1,24 +1,37 @@
 /**
- * bulmsService.js — Final "Relay" Version
- * Backend no longer scrapes; it only receives and saves data from the frontend.
+ * bulmsService.js — Final Relay Version
+ * Cleans and saves data provided by the frontend Magic Script.
  */
 const supabase = require("../db/supabase");
 
 async function syncUserData(userId, triggeredBy = "auto", externalData = null) {
   const syncStart = Date.now();
   
-  // If no external data is provided, we can't scrape anymore due to 403
-  if (!externalData) return { error: "manual_browser_sync_required" };
+  // Create a log entry for history
+  const { data: logRow } = await supabase.from("bulms_sync_logs").insert({ 
+    user_id: userId, 
+    triggered_by: triggeredBy, 
+    status: "running",
+    started_at: new Date().toISOString()
+  }).select("id").single();
+  
+  const logId = logRow?.id;
+
+  if (!externalData) {
+    if (logId) await supabase.from("bulms_sync_logs").update({ status: "failed", error_message: "No data provided" }).eq("id", logId);
+    return { error: "manual_browser_sync_required" };
+  }
 
   const { subjects, activities } = externalData;
 
   try {
-    // 1. Save Subjects
+    // 1. Save & Clean Subjects
     if (subjects && subjects.length > 0) {
       const subjectRows = subjects.map(s => ({
         user_id: userId,
         course_id: s.course_id,
-        course_name: s.course_name,
+        // Final backend cleaning pass
+        course_name: s.course_name.replace(/Course image/ig, '').trim(),
         course_url: s.course_url,
         synced_at: new Date().toISOString()
       }));
@@ -39,14 +52,26 @@ async function syncUserData(userId, triggeredBy = "auto", externalData = null) {
       await supabase.from("bulms_activities").upsert(activityRows, { onConflict: "user_id,activity_id" });
     }
 
+    // 3. Mark success
+    if (logId) {
+      await supabase.from("bulms_sync_logs").update({ 
+        status: "success", 
+        subjects_count: subjects?.length || 0,
+        activities_count: activities?.length || 0,
+        finished_at: new Date().toISOString(),
+        duration_ms: Date.now() - syncStart
+      }).eq("id", logId);
+    }
+
     return { success: true, newCount: activities?.length || 0 };
   } catch (err) {
     console.error("[BULMS Relay Error]", err.message);
+    if (logId) await supabase.from("bulms_sync_logs").update({ status: "failed", error_message: err.message }).eq("id", logId);
     return { error: err.message };
   }
 }
 
-// Stubs to keep the rest of the app from breaking
+// Compatibility Stubs
 async function validateSession() { return true; }
 function encryptCookies(d) { return { cookies_encrypted: d, iv: 'none', auth_tag: 'none' }; }
 function decryptCookies(d) { return d; }
