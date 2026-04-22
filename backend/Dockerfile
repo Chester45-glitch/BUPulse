@@ -1,15 +1,15 @@
 # ─────────────────────────────────────────────────────────────────
 # BUPulse Backend — Dockerfile for Render
-# Fixed: let Puppeteer download its own Chrome (no manual wget)
+# Fixed: added xauth for xvfb virtual display
 # ─────────────────────────────────────────────────────────────────
 FROM node:20-bookworm-slim
 
 # ── Install ONLY the system libraries Chrome needs to run ─────────
-# We do NOT download Chrome here — Puppeteer's npm install does it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     wget \
     xvfb \
+    xauth \
     fonts-liberation \
     libasound2 \
     libatk-bridge2.0-0 \
@@ -43,17 +43,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Allow Puppeteer to download its own bundled Chrome during npm install.
-# Do NOT set PUPPETEER_SKIP_CHROMIUM_DOWNLOAD or PUPPETEER_EXECUTABLE_PATH —
-# Puppeteer will find its own Chrome automatically.
 ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
 ENV NODE_ENV=production
 ENV BULMS_HEADLESS=true
 
-# Copy package files first (layer caching — Chrome only re-downloads
-# when package.json changes)
+# Copy package files first
 COPY package*.json ./
 
-# FIXED: Reverted to npm install because package-lock.json is out of sync
+# Install dependencies (ignoring missing lockfile sync issues)
 RUN npm install --omit=dev
 
 # Copy the rest of the source
