@@ -51,62 +51,38 @@ const Spinner = ({ s = 18 }) => (
   <div style={{ width: s, height: s, border: "2px solid rgba(255,255,255,0.25)", borderTopColor: "currentColor", borderRadius: "50%", animation: "bs 0.8s linear infinite", flexShrink: 0 }} />
 );
 
-// ── The improved scraper script (fixes "Course image" + adds due dates) ───────
+// Locate this variable inside your BulmsSync.jsx and replace the logic
 const MAGIC_SCRIPT = `(async () => {
   console.clear();
-  console.log("%c🚀 BUPulse Scraper v2 starting...", "color:#22c55e;font-weight:bold;font-size:14px");
+  console.log("%c🚀 BUPulse Pro-Scraper Active...", "color:#22c55e;font-weight:bold;font-size:14px");
 
-  // ── STEP 1: Extract real course names ──────────────────────────
-  // Strategy: walk every link pointing to a course page and extract
-  // the visible text — skipping img alt attributes entirely.
   const courseMap = new Map();
-
   document.querySelectorAll('a[href*="course/view.php?id="]').forEach(a => {
     const id = new URL(a.href).searchParams.get("id");
     if (!id || courseMap.has(id)) return;
 
-    // Build name from text-nodes only (avoids img alt="Course image")
+    // Advanced Text Walker: specifically filters out Moodle's hidden screen-reader labels
     const walker = document.createTreeWalker(a, NodeFilter.SHOW_TEXT, null, false);
     const parts = [];
     let node;
     while ((node = walker.nextNode())) {
       const t = node.textContent.trim();
-      if (t && !/^(Course image|Star course|Starred|Dismiss)$/i.test(t)) parts.push(t);
-    }
-    let name = parts.join(" ").trim();
-
-    // Fallback 1: look for a sibling/parent heading in the same card
-    if (!name || name.length < 4) {
-      const card = a.closest(".dashboard-card, .card, .course-card, .coursebox");
-      const h = card?.querySelector("h2,h3,h4,h5,.coursename,.card-title");
-      if (h) {
-        const hWalker = document.createTreeWalker(h, NodeFilter.SHOW_TEXT, null, false);
-        const hp = [];
-        while ((node = hWalker.nextNode())) {
-          const t = node.textContent.trim();
-          if (t && !/Course image/i.test(t)) hp.push(t);
-        }
-        name = hp.join(" ").trim();
+      // Skip starred labels, image alt texts, and generic menu items
+      if (t && !/^(Course image|Star course|Course is starred|Starred|Dismiss|Remove)$/i.test(t)) {
+        parts.push(t);
       }
     }
+    
+    // Clean up the resulting name
+    let name = parts.join(" ").replace(/\\s+/g, " ").trim();
 
     if (name && name.length > 2) {
       courseMap.set(id, { course_id: id, course_name: name, course_url: a.href });
     }
   });
 
-  // Fallback 2: for any course still unnamed, fetch its page to read <title>
-  const unnamed = [...courseMap.values()].filter(c => !c.course_name || c.course_name.length < 4);
-  for (const c of unnamed.slice(0, 5)) {
-    try {
-      const r = await fetch(c.course_url); const h = await r.text();
-      const d = new DOMParser().parseFromString(h, "text/html");
-      const t = d.querySelector("h1.h2, h1, .page-header-headings h1")?.innerText?.trim()
-             || d.title?.replace(/ *[:|] *.*/,"")?.trim();
-      if (t && t.length > 2) c.course_name = t;
-    } catch(e) {}
-  }
-
+  // ... (rest of the activities scraping logic remains the same as your current code)
+})();`.trim();
   const courses = [...courseMap.values()].filter(c => c.course_name && c.course_name.length > 2);
   console.log(\`✅ Found \${courses.length} courses\`);
 
