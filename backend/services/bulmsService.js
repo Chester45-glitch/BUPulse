@@ -1,14 +1,11 @@
 /**
- * bulmsService.js — BUPulse BULMS Integration
- *
- * Puppeteer-powered scraper that:
- * 1. Opens a browser so the user can manually authenticate via Google SSO
- * 2. Captures and encrypts session cookies
- * 3. Scrapes subjects, activities, and due dates from Moodle
- * 4. Detects session expiry and marks the account as disconnected
+ * bulmsService.js — BUPulse BULMS Integration (Stealth Edition)
  */
 
-const puppeteer  = require("puppeteer");
+const puppeteerExtra = require("puppeteer-extra");
+const StealthPlugin  = require("puppeteer-extra-plugin-stealth");
+puppeteerExtra.use(StealthPlugin()); // Activate stealth mode to bypass WAF 403s
+
 const crypto     = require("crypto");
 const supabase   = require("../db/supabase");
 
@@ -60,17 +57,17 @@ function decryptCookies(encrypted, iv, authTag) {
   return JSON.parse(decrypted.toString("utf8"));
 }
 
-// ── Browser factory ───────────────────────────────────────────────────────────
+// ── Browser factory (Stealth Mode) ────────────────────────────────────────────
 async function launchBrowser(headless = IS_HEADLESS) {
   const args = [
     "--no-sandbox",
     "--disable-setuid-sandbox",
     "--disable-dev-shm-usage",
     "--disable-blink-features=AutomationControlled",
-    "--start-maximized",
-    '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    "--start-maximized"
   ];
-  const browser = await puppeteer.launch({
+  // Use puppeteerExtra instead of standard puppeteer
+  const browser = await puppeteerExtra.launch({
     headless: headless ? "new" : false,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     args,
@@ -80,15 +77,10 @@ async function launchBrowser(headless = IS_HEADLESS) {
   return browser;
 }
 
-// ── Session status update helper ──────────────────────────────────────────────
 async function updateLinkSession(token, patch) {
-  await supabase
-    .from("bulms_link_sessions")
-    .update({ ...patch })
-    .eq("session_token", token);
+  await supabase.from("bulms_link_sessions").update({ ...patch }).eq("session_token", token);
 }
 
-// ── Wait for a selector with retry ───────────────────────────────────────────
 async function waitForAny(page, selectors, timeout = 15_000) {
   const promises = selectors.map((sel) =>
     page.waitForSelector(sel, { timeout }).then(() => sel).catch(() => null)
@@ -110,17 +102,12 @@ async function scrapeCourses(page) {
   try {
     await page.goto(`${BULMS_URL}/my/`, { waitUntil: "domcontentloaded", timeout: SCRAPE_TIMEOUT });
 
-    // Wait for Moodle's initial dashboard scripts to boot up
     await new Promise(res => setTimeout(res, 3000));
     if (isLoginPage(page.url())) return null;
 
-    // Force scroll to trigger any lazy-loaded course cards
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    
     console.log(`[BULMS] Authenticated successfully. Waiting for courses to render...`);
 
-    // FIX 1: Explicitly wait for at least one course link to appear anywhere on the page
-    // This forces Puppeteer to wait out Moodle's slow AJAX requests
     await page.waitForFunction(() => {
       return document.querySelectorAll("a[href*='course/view.php?id=']").length > 0;
     }, { timeout: 15000 }).catch(() => console.log("[BULMS] Timeout waiting for course links. Checking fallbacks..."));
@@ -130,8 +117,6 @@ async function scrapeCourses(page) {
     const evaluateLogic = (baseUrl) => {
       const courseMap = new Map();
 
-      // FIX 2: Grab EVERY link. We no longer ignore the nav-drawer or top menus! 
-      // If the main dashboard AJAX is slow, the menus always have your courses instantly.
       document.querySelectorAll("a[href*='course/view.php?id=']").forEach((a) => {
         const href = a.getAttribute("href");
         const match = href.match(/[?&]id=(\d+)/);
@@ -146,12 +131,8 @@ async function scrapeCourses(page) {
 
         const data = courseMap.get(courseId);
         
-        // Upgrade from menu link to main card link if we find one
-        if (data.isMenuLink && !isMenuLink) {
-          data.isMenuLink = false;
-        }
+        if (data.isMenuLink && !isMenuLink) data.isMenuLink = false;
 
-        // Save the closest physical card if we find one in the main body
         if (!data.card && !isMenuLink) {
           data.card = a.closest('.card, .coursebox, .dashboard-card, .my-course-item, [data-region="course-events-container"]');
         }
@@ -166,7 +147,6 @@ async function scrapeCourses(page) {
         let courseName = "";
         let category = null;
 
-        // Extract from structured card if available
         if (data.card) {
           const titleEl = data.card.querySelector(".coursename, .card-title, h3, h4, .multiline");
           if (titleEl) courseName = titleEl.textContent;
@@ -175,26 +155,17 @@ async function scrapeCourses(page) {
           if (catEl) category = catEl.textContent.trim();
         }
 
-        // Fallback to the largest text snippet we found across all links
         if (!courseName || !courseName.trim()) {
           courseName = data.textSegments.sort((a, b) => b.length - a.length)[0] || "";
         }
 
         courseName = courseName
-          .replace(/Course image/ig, '')
-          .replace(/Star course/ig, '')
-          .replace(/Course is starred/ig, '')
-          .replace(/\n/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
+          .replace(/Course image/ig, '').replace(/Star course/ig, '').replace(/Course is starred/ig, '')
+          .replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
 
-        // Safety check to ensure it's actually a course name
         if (courseName.length > 3) {
           results.push({
-            course_id: courseId,
-            course_name: courseName,
-            short_name: null,
-            category: category,
+            course_id: courseId, course_name: courseName, short_name: null, category: category,
             course_url: data.href.startsWith("http") ? data.href : `${baseUrl}${data.href}`,
           });
         }
@@ -208,7 +179,6 @@ async function scrapeCourses(page) {
       courses = await page.evaluate(evaluateLogic, BULMS_URL);
     } catch (evalErr) {
       if (evalErr.message.includes("Execution context was destroyed")) {
-        console.log("[BULMS] Context destroyed, waiting 3s to retry...");
         await new Promise(res => setTimeout(res, 3000));
         if (isLoginPage(page.url())) return null;
         courses = await page.evaluate(evaluateLogic, BULMS_URL);
@@ -217,20 +187,14 @@ async function scrapeCourses(page) {
       }
     }
 
-    // Fallback to Moodle 4.x /my/courses.php if dashboard completely fails
     if (!courses || courses.length === 0) {
       console.log(`[BULMS] 0 courses on /my/, trying /my/courses.php...`);
       await page.goto(`${BULMS_URL}/my/courses.php`, { waitUntil: "domcontentloaded", timeout: SCRAPE_TIMEOUT });
       await new Promise(res => setTimeout(res, 3000));
-      
-      await page.waitForFunction(() => {
-        return document.querySelectorAll("a[href*='course/view.php?id=']").length > 0;
-      }, { timeout: 10000 }).catch(() => null);
-
+      await page.waitForFunction(() => { return document.querySelectorAll("a[href*='course/view.php?id=']").length > 0; }, { timeout: 10000 }).catch(() => null);
       courses = await page.evaluate(evaluateLogic, BULMS_URL);
     }
 
-    // FIX 3: Extreme fallback debugging. If it STILL fails, log the page text so we can see if Moodle is throwing an error.
     if (!courses || courses.length === 0) {
       const pageSnip = await page.evaluate(() => document.body.innerText.substring(0, 500).replace(/\n/g, ' '));
       console.log(`[BULMS DEBUG] No courses found. Page text snippet: ${pageSnip}`);
@@ -256,25 +220,12 @@ async function scrapeActivitiesForCourse(page, courseId, courseUrl) {
 
     const evaluateLogic = (cid, baseUrl) => {
       const results = [];
-      const activityEls = document.querySelectorAll(
-        ".activity, .activity-item, [data-activityname], li.activity"
-      );
+      const activityEls = document.querySelectorAll(".activity, .activity-item, [data-activityname], li.activity");
 
       activityEls.forEach((el) => {
         const classList = el.className || "";
         let type = "resource";
-        const typeMap = {
-          modtype_assign:   "assign",
-          modtype_quiz:     "quiz",
-          modtype_forum:    "forum",
-          modtype_url:      "url",
-          modtype_resource: "resource",
-          modtype_folder:   "folder",
-          modtype_page:     "page",
-          modtype_scorm:    "scorm",
-          modtype_survey:   "survey",
-          modtype_choice:   "choice",
-        };
+        const typeMap = { modtype_assign: "assign", modtype_quiz: "quiz", modtype_forum: "forum", modtype_url: "url", modtype_resource: "resource", modtype_folder: "folder", modtype_page: "page", modtype_scorm: "scorm", modtype_survey: "survey", modtype_choice: "choice" };
         for (const [cls, t] of Object.entries(typeMap)) {
           if (classList.includes(cls)) { type = t; break; }
         }
@@ -316,15 +267,9 @@ async function scrapeActivitiesForCourse(page, courseId, courseUrl) {
         }
 
         results.push({
-          course_id:          cid,
-          activity_id:        `${cid}_${activityId}`,
-          activity_name:      nameEl.textContent.trim().replace(/\s+/g, " ").replace(/Mark as done/ig, '').trim(),
-          activity_type:      type,
-          due_date:           dueDate,
-          description:        null,
-          submission_status:  submissionStatus,
-          grade:              null,
-          activity_url:       href.startsWith("http") ? href : `${baseUrl}${href}`,
+          course_id: cid, activity_id: `${cid}_${activityId}`, activity_name: nameEl.textContent.trim().replace(/\s+/g, " ").replace(/Mark as done/ig, '').trim(),
+          activity_type: type, due_date: dueDate, description: null, submission_status: submissionStatus, grade: null,
+          activity_url: href.startsWith("http") ? href : `${baseUrl}${href}`,
         });
       });
 
@@ -365,20 +310,13 @@ async function startLinkSession(userId, sessionToken) {
     browser = await launchBrowser(false); 
     const page = await browser.newPage();
 
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
-    });
-
+    await page.evaluateOnNewDocument(() => { Object.defineProperty(navigator, "webdriver", { get: () => undefined }); });
     await page.goto(BULMS_LOGIN_URL, { waitUntil: "domcontentloaded", timeout: 30_000 });
 
     const loginSuccess = await page.waitForFunction(
       (myUrl) => {
         const url = window.location.href;
-        return (
-          url.includes("/my/") ||
-          url.includes("/dashboard") ||
-          document.querySelector(".usermenu, [data-key=\"myhome\"], #page-site-index, .dashboard-card, #page-my-index") !== null
-        );
+        return (url.includes("/my/") || url.includes("/dashboard") || document.querySelector(".usermenu, [data-key=\"myhome\"], #page-site-index, .dashboard-card, #page-my-index") !== null);
       },
       { timeout: LOGIN_TIMEOUT_MS }
     ).catch(() => null);
@@ -402,28 +340,18 @@ async function startLinkSession(userId, sessionToken) {
         const m = profileLink.getAttribute("href")?.match(/[?&]id=(\d+)/);
         if (m) moodleUserId = m[1];
       }
-      return {
-        moodle_username: menuEl?.textContent?.trim() || null,
-        moodle_user_id:  moodleUserId,
-      };
+      return { moodle_username: menuEl?.textContent?.trim() || null, moodle_user_id: moodleUserId };
     }).catch(() => ({ moodle_username: null, moodle_user_id: null }));
 
     const { error: sessionErr } = await supabase
       .from("bulms_sessions")
       .upsert({
-        user_id:           userId,
-        cookies_encrypted,
-        iv,
-        auth_tag,
-        moodle_user_id:    bulmsUserInfo.moodle_user_id,
-        moodle_username:   bulmsUserInfo.moodle_username,
-        status:            "active",
-        last_verified_at:  new Date().toISOString(),
-        updated_at:        new Date().toISOString(),
+        user_id: userId, cookies_encrypted, iv, auth_tag, moodle_user_id: bulmsUserInfo.moodle_user_id,
+        moodle_username: bulmsUserInfo.moodle_username, status: "active",
+        last_verified_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       }, { onConflict: "user_id" });
 
     if (sessionErr) throw sessionErr;
-
     await updateLinkSession(sessionToken, { status: "done" });
   } catch (err) {
     console.error(`[BULMS] startLinkSession error for ${userId}:`, err.message);
@@ -437,10 +365,7 @@ async function syncUserData(userId, triggeredBy = "auto") {
   const syncStart = Date.now();
   let logId;
 
-  const { data: logRow } = await supabase
-    .from("bulms_sync_logs")
-    .insert({ user_id: userId, triggered_by: triggeredBy, status: "running" })
-    .select("id").single();
+  const { data: logRow } = await supabase.from("bulms_sync_logs").insert({ user_id: userId, triggered_by: triggeredBy, status: "running" }).select("id").single();
   logId = logRow?.id;
 
   const finishLog = async (patch) => {
@@ -448,9 +373,7 @@ async function syncUserData(userId, triggeredBy = "auto") {
     await supabase.from("bulms_sync_logs").update({ ...patch, finished_at: new Date().toISOString(), duration_ms: Date.now() - syncStart }).eq("id", logId);
   };
 
-  const { data: session, error: sessErr } = await supabase
-    .from("bulms_sessions")
-    .select("*").eq("user_id", userId).single();
+  const { data: session, error: sessErr } = await supabase.from("bulms_sessions").select("*").eq("user_id", userId).single();
 
   if (sessErr || !session) {
     await finishLog({ status: "failed", error_message: "No BULMS session found." });
@@ -473,6 +396,13 @@ async function syncUserData(userId, triggeredBy = "auto") {
   try {
     browser = await launchBrowser(true); 
     const page = await browser.newPage();
+
+    // STEALTH: Inject extra headers to look like a real human
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Upgrade-Insecure-Requests': '1'
+    });
 
     await page.evaluateOnNewDocument(() => { Object.defineProperty(navigator, "webdriver", { get: () => undefined }); });
 
@@ -500,13 +430,13 @@ async function syncUserData(userId, triggeredBy = "auto") {
 
     if (courses.length > 0) {
       const subjectRows = courses.map((c) => ({
-        user_id:     userId, course_id: c.course_id, course_name: c.course_name, short_name: c.short_name, category: c.category, course_url: c.course_url, synced_at: new Date().toISOString(),
+        user_id: userId, course_id: c.course_id, course_name: c.course_name, short_name: c.short_name, category: c.category, course_url: c.course_url, synced_at: new Date().toISOString(),
       }));
       await supabase.from("bulms_subjects").upsert(subjectRows, { onConflict: "user_id,course_id" });
     }
 
     const allActivities = [];
-    const coursesToScrape = courses.slice(0, 8); // Limit to prevent timeout
+    const coursesToScrape = courses.slice(0, 8); 
 
     for (const course of coursesToScrape) {
       const acts = await scrapeActivitiesForCourse(page, course.course_id, course.course_url);
