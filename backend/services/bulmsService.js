@@ -1,14 +1,21 @@
 /**
- * bulmsService.js — Relay Edition (stores course_name + due_date)
+ * bulmsService.js — Final Relay Version
+ * Backend no longer scrapes; it receives and cleans data from the frontend script.
  */
 const supabase = require("../db/supabase");
 
 async function syncUserData(userId, triggeredBy = "auto", externalData = null) {
   const syncStart = Date.now();
 
+  // 1. Create a log entry for sync history
   const { data: logRow } = await supabase
     .from("bulms_sync_logs")
-    .insert({ user_id: userId, triggered_by: triggeredBy, status: "running", started_at: new Date().toISOString() })
+    .insert({ 
+      user_id: userId, 
+      triggered_by: triggeredBy, 
+      status: "running", 
+      started_at: new Date().toISOString() 
+    })
     .select("id").single();
   const logId = logRow?.id;
 
@@ -20,12 +27,18 @@ async function syncUserData(userId, triggeredBy = "auto", externalData = null) {
   const { subjects, activities } = externalData;
 
   try {
-    // ── Upsert subjects ──────────────────────────────────────────────────────
+    // 2. Clean and Upsert Subjects
     if (subjects?.length > 0) {
       const subjectRows = subjects.map(s => ({
         user_id:     userId,
         course_id:   String(s.course_id),
-        course_name: (s.course_name || "").replace(/Course image/gi, "").replace(/\s+/g, " ").trim(),
+        // Removes hidden Moodle labels that clutter the UI
+        course_name: (s.course_name || "")
+          .replace(/Course is starred/gi, "")
+          .replace(/Course image/gi, "")
+          .replace(/Star course/gi, "")
+          .replace(/\s+/g, " ")
+          .trim(),
         course_url:  s.course_url || null,
         synced_at:   new Date().toISOString(),
       })).filter(s => s.course_name.length > 1);
@@ -35,14 +48,7 @@ async function syncUserData(userId, triggeredBy = "auto", externalData = null) {
         .upsert(subjectRows, { onConflict: "user_id,course_id" });
     }
 
-    // Build a course_id → course_name lookup for enriching activities
-    const courseNameMap = {};
-    (subjects || []).forEach(s => {
-      const name = (s.course_name || "").replace(/Course image/gi, "").trim();
-      if (name) courseNameMap[String(s.course_id)] = name;
-    });
-
-    // ── Upsert activities ────────────────────────────────────────────────────
+    // 3. Upsert Activities with Due Dates
     if (activities?.length > 0) {
       const activityRows = activities.map(a => ({
         user_id:           userId,
@@ -51,9 +57,7 @@ async function syncUserData(userId, triggeredBy = "auto", externalData = null) {
         activity_name:     (a.activity_name || "").trim(),
         activity_type:     a.activity_type || "assign",
         activity_url:      a.activity_url || null,
-        // NEW: store course_name so it shows without a JOIN
-        course_name:       a.course_name || courseNameMap[String(a.course_id)] || null,
-        // NEW: store due_date if the script extracted it
+        course_name:       a.course_name || null,
         due_date:          a.due_date || null,
         synced_at:         new Date().toISOString(),
       })).filter(a => a.activity_name.length > 0);
@@ -63,7 +67,7 @@ async function syncUserData(userId, triggeredBy = "auto", externalData = null) {
         .upsert(activityRows, { onConflict: "user_id,activity_id" });
     }
 
-    // ── Mark session active (so /status shows "connected") ──────────────────
+    // 4. Mark session active so the dashboard shows as connected
     await supabase.from("bulms_sessions").upsert({
       user_id:          userId,
       cookies_encrypted: "relay",
@@ -79,7 +83,6 @@ async function syncUserData(userId, triggeredBy = "auto", externalData = null) {
         status:           "success",
         subjects_count:   subjects?.length  || 0,
         activities_count: activities?.length || 0,
-        new_activities:   activities?.length || 0,
         finished_at:      new Date().toISOString(),
         duration_ms:      Date.now() - syncStart,
       }).eq("id", logId);
@@ -93,6 +96,7 @@ async function syncUserData(userId, triggeredBy = "auto", externalData = null) {
   }
 }
 
+// Compatibility stubs to prevent router crashes
 async function validateSession() { return true; }
 function encryptCookies(d) { return { cookies_encrypted: String(d), iv: "none", auth_tag: "none" }; }
 function decryptCookies(d) { return d; }
