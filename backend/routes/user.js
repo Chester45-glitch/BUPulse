@@ -47,32 +47,6 @@ router.patch("/notifications", authenticateToken, async (req, res) => {
   }
 });
 
-// NEW: DELETE BULMS Connection
-router.delete("/account/bulms", authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    await supabase.from("user_credentials").delete().eq("user_id", userId);
-    await supabase.from("academic_data").delete().eq("user_id", userId);
-    res.json({ success: true, message: "BULMS disconnected successfully" });
-  } catch (err) {
-    console.error("Disconnect error:", err.message);
-    res.status(500).json({ error: "Failed to disconnect BULMS" });
-  }
-});
-
-// NEW: DELETE BULMS Connection
-router.delete("/account/bulms", authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    await supabase.from("user_credentials").delete().eq("user_id", userId);
-    await supabase.from("academic_data").delete().eq("user_id", userId);
-    res.json({ success: true, message: "BULMS disconnected successfully" });
-  } catch (err) {
-    console.error("Disconnect error:", err.message);
-    res.status(500).json({ error: "Failed to disconnect BULMS" });
-  }
-});
-
 // DELETE account
 router.delete("/account", authenticateToken, async (req, res) => {
   try {
@@ -102,10 +76,9 @@ router.get("/me", authenticateToken, async (req, res) => {
       .eq("id", req.user.id)
       .is("deleted_at", null)
       .single();
-
-    if (error) throw error;
+    if (error || !user) return res.status(404).json({ error: "User not found" });
     res.json(user);
-  } catch (error) {
-    res.status(401).json({ error: "Invalid token" });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch user" });
   }
 });

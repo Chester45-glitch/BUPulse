@@ -3,9 +3,6 @@ const express = require("express");
 const cors = require("cors");
 const session = require("express-session");
 
-// 1. ADD THIS LINE (Import the routes)
-const bulmsRoutes = require("./routes/bulms"); 
-
 const authRoutes         = require("./routes/auth");
 const classroomRoutes    = require("./routes/classroom");
 const notificationRoutes = require("./routes/notifications");
@@ -20,7 +17,7 @@ const attendanceRoutes   = require("./routes/attendance");
 const { startScheduler } = require("./services/scheduler");
 
 const app = express();
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3001;
 
 app.use(cors({
   origin: [
@@ -31,7 +28,7 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json({ limit: "25mb" }));
+app.use(express.json({ limit: "25mb" })); // 10MB file = ~13.3MB base64, 25mb gives safe headroom
 app.use(session({
   secret: process.env.SESSION_SECRET || "bupulse-secret",
   resave: false,
@@ -53,9 +50,6 @@ app.use("/api/user",          userRoutes);
 app.use("/api/upload",        uploadRoutes);
 app.use("/api/schedule",      scheduleRoutes);
 app.use("/api/attendance",    attendanceRoutes);
-
-// 2. ADD THIS LINE (Register the routes)
-app.use("/api/bulms",         bulmsRoutes); 
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "BUPulse API running", timestamp: new Date() });
