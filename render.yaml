@@ -8,7 +8,8 @@ services:
   - type: web
     name: bupulse-backend
     runtime: docker                    # Use our Dockerfile (not native Node)
-    dockerfilePath: ./Dockerfile       # Path relative to repo root
+    rootDir: backend                   # <--- ADDED THIS: Sets the build context to the backend folder
+    dockerfilePath: ./Dockerfile       # Path relative to repo root (assumes Dockerfile is at repo root)
     plan: starter                      # starter = $7/mo, never sleeps
                                        # free tier WILL sleep → kills Puppeteer sessions
     region: singapore                  # Closest to Philippines (Asia/Manila)
