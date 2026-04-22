@@ -188,8 +188,69 @@ const MAGIC_SCRIPT = `(async () => {
 
   console.log(\`✅ Found \${activities.length} activities\`);
   const result = JSON.stringify({ subjects: courses, activities });
-  prompt("✅ Done! Copy everything below and paste into BUPulse:", result);
-  console.log("%c✅ Prompt shown. Copy the data and paste it into BUPulse.", "color:#22c55e;font-weight:bold");
+
+  // ── Show result in a page overlay (no length limit unlike prompt()) ─
+  // Remove any existing overlay first
+  document.getElementById('__bupulse_overlay')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = '__bupulse_overlay';
+  overlay.style.cssText = [
+    'position:fixed','top:0','left:0','right:0','bottom:0',
+    'background:rgba(0,0,0,0.85)','z-index:2147483647',
+    'display:flex','align-items:center','justify-content:center',
+    'font-family:system-ui,sans-serif',
+  ].join(';');
+
+  overlay.innerHTML = \`
+    <div style="background:#1e293b;border-radius:16px;padding:24px;max-width:640px;width:92%;box-shadow:0 25px 60px rgba(0,0,0,0.5);">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <span style="font-size:22px">✅</span>
+        <p style="color:#f8fafc;font-weight:700;font-size:16px;margin:0;">BUPulse sync data ready!</p>
+      </div>
+      <p style="color:#94a3b8;font-size:13px;margin:0 0 14px;">
+        Found <strong style="color:#22c55e">\${courses.length} subjects</strong> and
+        <strong style="color:#22c55e">\${activities.length} activities</strong>.
+        Click <strong>Copy</strong> then paste into BUPulse.
+      </p>
+      <textarea id="__bupulse_ta" readonly style="
+        width:100%;height:130px;background:#0f172a;color:#22c55e;
+        border:1px solid #334155;border-radius:10px;padding:12px;
+        font-family:monospace;font-size:11px;resize:none;box-sizing:border-box;
+        outline:none;
+      "></textarea>
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button id="__bupulse_copy" style="
+          background:#22c55e;color:#fff;border:none;padding:10px 22px;
+          border-radius:8px;cursor:pointer;font-weight:700;font-size:14px;flex:1;
+        ">📋 Copy to Clipboard</button>
+        <button id="__bupulse_close" style="
+          background:#475569;color:#fff;border:none;padding:10px 18px;
+          border-radius:8px;cursor:pointer;font-size:14px;
+        ">✕ Close</button>
+      </div>
+    </div>
+  \`;
+
+  document.body.appendChild(overlay);
+
+  // Fill textarea after mount (avoids innerHTML XSS issues with raw data)
+  const ta = document.getElementById('__bupulse_ta');
+  ta.value = result;
+
+  document.getElementById('__bupulse_copy').onclick = () => {
+    navigator.clipboard.writeText(result).then(() => {
+      const btn = document.getElementById('__bupulse_copy');
+      if (btn) { btn.textContent = '✅ Copied!'; btn.style.background = '#16a34a'; }
+    }).catch(() => {
+      // Fallback: select textarea so user can Ctrl+C manually
+      ta.select(); ta.setSelectionRange(0, 999999);
+      alert('Press Ctrl+C (or Cmd+C) to copy.');
+    });
+  };
+  document.getElementById('__bupulse_close').onclick = () => overlay.remove();
+
+  console.log(\`%c✅ Done! \${courses.length} subjects, \${activities.length} activities scraped.\`, 'color:#22c55e;font-weight:bold;font-size:13px');
 })();`.trim();
 
 // ── Activity card (shared for both Google + BULMS) ────────────────────────────
@@ -544,7 +605,7 @@ export default function BulmsSync() {
             </div>
             <div style={{ marginTop: 12, padding: "10px 14px", background: "#fefce8", borderRadius: 10, border: "1px solid #fde68a" }}>
               <p style={{ fontSize: 12, color: "#92400e", lineHeight: 1.5 }}>
-                💡 After the script runs, a browser prompt will appear with the data. Click inside it, select all (<kbd style={{ background: "#fef9c3", padding: "1px 5px", borderRadius: 4, fontSize: 10 }}>Ctrl+A</kbd>), copy, then come back here.
+                💡 After the script runs, a <strong>green overlay</strong> will appear on the BULMS page with a <strong>Copy to Clipboard</strong> button. Click it, then come back here and paste into Step 2.
               </p>
             </div>
           </div>
@@ -555,7 +616,7 @@ export default function BulmsSync() {
               Step 2 — Paste the result here
             </h3>
             <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
-              Paste the JSON from the prompt. It should start with <code style={{ fontSize: 11, background: "var(--bg-tertiary)", padding: "1px 5px", borderRadius: 4 }}>{"{"}"subjects":</code>
+              After clicking <strong>Copy to Clipboard</strong> in the overlay, paste here. It should start with <code style={{ fontSize: 11, background: "var(--bg-tertiary)", padding: "1px 5px", borderRadius: 4 }}>{"{"}"subjects":</code>
             </p>
             <textarea
               value={pastedData}
