@@ -1,156 +1,210 @@
 /**
- * bulmsService.js — BUPulse BULMS Integration (Official REST API Version)
- * Completely bypasses Web Application Firewalls (Cloudflare/Imperva) by utilizing
- * the official Moodle Mobile Web Service API. Puppeteer is no longer required!
+ * bulmsService.js — BUPulse BULMS Integration (Native Fetch + Cheerio)
+ * This entirely removes Puppeteer and bypasses strict WAF browser checks
+ * by executing hyper-fast native node fetches and HTML parsing.
  */
 
+const cheerio  = require("cheerio");
 const crypto   = require("crypto");
 const supabase = require("../db/supabase");
 
-const BULMS_URL  = process.env.BULMS_URL || "https://bulms.bicol-u.edu.ph";
-const COOKIE_KEY = process.env.BULMS_COOKIE_KEY || null;
+const BULMS_URL      = process.env.BULMS_URL || "https://bulms.bicol-u.edu.ph";
+const BULMS_HOME_URL = `${BULMS_URL}/?redirect=0`;
+const COOKIE_KEY     = process.env.BULMS_COOKIE_KEY || null;
 
-// ── Encryption (Reused for the Token) ─────────────────────────────────────────
+// ── Encryption ───────────────────────────────────────────────────────────────
 function getKey() {
-  if (!COOKIE_KEY || COOKIE_KEY.length < 64) throw new Error("BULMS_COOKIE_KEY must be a 64-char hex string.");
+  if (!COOKIE_KEY || COOKIE_KEY.length < 64) throw new Error("BULMS_COOKIE_KEY must be a 64-char hex string (32 bytes).");
   return Buffer.from(COOKIE_KEY, "hex");
 }
 
-function encryptToken(tokenString) {
+function encryptCookies(data) {
   const key = getKey();
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
-  const encrypted = Buffer.concat([cipher.update(tokenString, "utf8"), cipher.final()]);
+  const payload = typeof data === "string" ? data : JSON.stringify(data);
+  const encrypted = Buffer.concat([cipher.update(payload, "utf8"), cipher.final()]);
   return { cookies_encrypted: encrypted.toString("hex"), iv: iv.toString("hex"), auth_tag: cipher.getAuthTag().toString("hex") };
 }
 
-function decryptToken(encrypted, iv, authTag) {
+function decryptCookies(encrypted, iv, authTag) {
   const key = getKey();
   const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "hex"));
   decipher.setAuthTag(Buffer.from(authTag, "hex"));
-  return Buffer.concat([decipher.update(Buffer.from(encrypted, "hex")), decipher.final()]).toString("utf8");
+  const decrypted = Buffer.concat([decipher.update(Buffer.from(encrypted, "hex")), decipher.final()]).toString("utf8");
+  try { return JSON.parse(decrypted); } catch { return decrypted; }
 }
 
-// ── Native Fetch Helper ───────────────────────────────────────────────────────
-async function fetchMoodle(token, wsfunction, params = {}) {
-  const url = new URL(`${BULMS_URL}/webservice/rest/server.php`);
-  url.searchParams.append("wstoken", token);
-  url.searchParams.append("wsfunction", wsfunction);
-  url.searchParams.append("moodlewsrestformat", "json");
-  
-  for (const [key, value] of Object.entries(params)) {
-    url.searchParams.append(key, value);
-  }
-
-  const response = await fetch(url.toString(), {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" }
+// ── Native Fetch Helper ──────────────────────────────────────────────────────
+async function fetchHtml(url, sessionCookie) {
+  const response = await fetch(url, {
+    headers: {
+      "Cookie": `MoodleSession=${sessionCookie}`,
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Upgrade-Insecure-Requests": "1"
+    }
   });
-  
-  const data = await response.json();
-  if (data && data.exception) {
-    throw new Error(`Moodle API Error: ${data.message}`);
-  }
-  return data;
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return await response.text();
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// PUBLIC API (Function signatures remain exactly the same to avoid breaking router)
+// PUBLIC API
 // ════════════════════════════════════════════════════════════════════════════════
 
-// The frontend will still call /link-manual and pass the token as 'moodle_session'
-const encryptCookies = encryptToken;
-const decryptCookies = decryptToken;
-
-// Puppeteer flow is dead, but we keep the stub so the router doesn't crash if called
+// Stub for router compatibility
 async function startLinkSession(userId, sessionToken) {
-  await supabase.from("bulms_link_sessions").update({ status: "failed", error: "Please use the manual Token link method." }).eq("session_token", sessionToken);
+   await supabase.from("bulms_link_sessions").update({ status: "failed", error: "Please use the manual link method." }).eq("session_token", sessionToken);
 }
 
 async function syncUserData(userId, triggeredBy = "auto") {
   const syncStart = Date.now();
   let logId;
-
   const { data: logRow } = await supabase.from("bulms_sync_logs").insert({ user_id: userId, triggered_by: triggeredBy, status: "running" }).select("id").single();
   logId = logRow?.id;
-
+  
   const finishLog = async (patch) => {
     if (!logId) return;
     await supabase.from("bulms_sync_logs").update({ ...patch, finished_at: new Date().toISOString(), duration_ms: Date.now() - syncStart }).eq("id", logId);
   };
 
   const { data: session, error: sessErr } = await supabase.from("bulms_sessions").select("*").eq("user_id", userId).single();
-
   if (sessErr || !session) {
-    await finishLog({ status: "failed", error_message: "No BULMS token found." });
+    await finishLog({ status: "failed", error_message: "No session found." });
     return { error: "no_session" };
   }
 
-  let token;
-  try {
-    token = decryptToken(session.cookies_encrypted, session.iv, session.auth_tag);
-  } catch (err) {
-    await finishLog({ status: "failed", error_message: "Token decryption failed." });
-    return { error: "decryption_failed" };
+  let cookies;
+  try { cookies = decryptCookies(session.cookies_encrypted, session.iv, session.auth_tag); }
+  catch { await finishLog({ status: "failed", error_message: "Decryption failed." }); return { error: "decryption_failed" }; }
+
+  // Robustly extract the cookie value whether it was saved as a raw string or JSON array
+  let moodleSessionVal = "";
+  if (Array.isArray(cookies)) {
+     const c = cookies.find(x => x.name === "MoodleSession");
+     if (c) moodleSessionVal = c.value;
+  } else {
+     moodleSessionVal = cookies;
+  }
+
+  if (!moodleSessionVal) {
+     await finishLog({ status: "failed", error_message: "No MoodleSession value found." });
+     return { error: "invalid_cookie" };
   }
 
   try {
-    // 1. Validate Token & Get User Info
-    const siteInfo = await fetchMoodle(token, "core_webservice_get_site_info");
-    const moodleUserId = siteInfo.userid;
-
-    // 2. Fetch Courses
-    const enrolledCourses = await fetchMoodle(token, "core_enrol_get_users_courses", { userid: moodleUserId });
+    // 1. Fetch the Site Home to grab courses instantly
+    const html = await fetchHtml(BULMS_HOME_URL, moodleSessionVal);
     
-    if (enrolledCourses.length > 0) {
-      const subjectRows = enrolledCourses.map((c) => ({
-        user_id: userId,
-        course_id: c.id.toString(),
-        course_name: c.fullname,
-        short_name: c.shortname,
-        category: null, 
-        course_url: `${BULMS_URL}/course/view.php?id=${c.id}`,
-        synced_at: new Date().toISOString(),
-      }));
-      await supabase.from("bulms_subjects").upsert(subjectRows, { onConflict: "user_id,course_id" });
+    // Check if cookie expired
+    if (html.includes("login/index.php") || html.includes("Log in to the site")) {
+      await supabase.from("bulms_sessions").update({ status: "expired" }).eq("user_id", userId);
+      await finishLog({ status: "session_expired", error_message: "Session expired." });
+      return { error: "session_expired" };
     }
 
-    // 3. Fetch Assignments across all courses instantly
-    // The Moodle API can fetch all assignments for a user in a single ultra-fast request
-    const assignmentData = await fetchMoodle(token, "mod_assign_get_assignments");
-    let allActivities = [];
+    const $ = cheerio.load(html);
 
-    // Parse the assignment data
-    for (const course of assignmentData.courses || []) {
-      for (const assign of course.assignments || []) {
-        
-        let status = "notsubmitted";
-        // Check submission status if available
+    // Extract basic info
+    const userName = $(".usertext").first().text().trim() || session.moodle_username;
+    const profileLink = $("a[href*='/user/profile']").attr("href") || "";
+    const userIdMatch = profileLink.match(/[?&]id=(\d+)/);
+    const moodleUserId = userIdMatch ? userIdMatch[1] : session.moodle_user_id;
+
+    // 2. Extract Courses using the Cheerio vacuum
+    const courses = [];
+    $("a[href*='course/view.php?id=']").each((i, el) => {
+        const href = $(el).attr("href");
+        const match = href.match(/[?&]id=(\d+)/);
+        if (!match) return;
+        const courseId = match[1];
+
+        // Skip dropdown menu links to avoid empty titles if we already found the main card
+        if ($(el).closest('#nav-drawer, .dropdown-menu').length > 0 && courses.some(c => c.course_id === courseId)) return;
+
+        let courseName = $(el).text().trim().replace(/\s+/g, ' ');
+        if (courseName.length < 3) {
+           courseName = $(el).closest('.card, .coursebox').find('.coursename, h3, h4').text().trim().replace(/\s+/g, ' ');
+        }
+        courseName = courseName.replace(/Course image/ig, '').trim();
+
+        if (courseName.length > 3 && !courses.find(c => c.course_id === courseId)) {
+            courses.push({
+                course_id: courseId,
+                course_name: courseName,
+                short_name: null,
+                category: $(el).closest('.card, .coursebox').find('.category-name').text().trim() || null,
+                course_url: href.startsWith("http") ? href : `${BULMS_URL}${href}`,
+                synced_at: new Date().toISOString()
+            });
+        }
+    });
+
+    if (courses.length > 0) {
+        const subjectRows = courses.map(c => ({ user_id: userId, ...c }));
+        await supabase.from("bulms_subjects").upsert(subjectRows, { onConflict: "user_id,course_id" });
+    }
+
+    // 3. Extract Activities across courses
+    const allActivities = [];
+    for (const course of courses.slice(0, 8)) {
         try {
-           const statusData = await fetchMoodle(token, "mod_assign_get_submission_status", { assignid: assign.id });
-           if (statusData.lastattempt && statusData.lastattempt.submission) {
-              if (statusData.lastattempt.submission.status === "submitted") status = "submitted";
-           }
-           if (statusData.feedback && statusData.feedback.grade) status = "graded";
-        } catch(e) { /* Ignore status check failures to keep sync fast */ }
+            const cHtml = await fetchHtml(course.course_url, moodleSessionVal);
+            const $c = cheerio.load(cHtml);
 
-        allActivities.push({
-          user_id: userId,
-          course_id: course.id.toString(),
-          activity_id: `${course.id}_${assign.id}`,
-          activity_name: assign.name,
-          activity_type: "assign",
-          due_date: assign.duedate ? new Date(assign.duedate * 1000).toISOString() : null,
-          description: assign.intro,
-          submission_status: status,
-          grade: null,
-          activity_url: `${BULMS_URL}/mod/assign/view.php?id=${assign.cmid}`,
-          synced_at: new Date().toISOString(),
-        });
-      }
+            $c(".activity, .activity-item, li.activity").each((i, el) => {
+                 const classList = $c(el).attr("class") || "";
+                 let type = "resource";
+                 if (classList.includes("assign")) type = "assign";
+                 else if (classList.includes("quiz")) type = "quiz";
+                 else if (classList.includes("forum")) type = "forum";
+
+                 if (!["assign","quiz","forum"].includes(type)) return;
+
+                 const aTag = $c(el).find("a[href*='mod/']");
+                 if (!aTag.length) return;
+                 const href = aTag.attr("href");
+                 const cmMatch = href.match(/[?&]id=(\d+)/);
+                 if (!cmMatch) return;
+                 const activityId = cmMatch[1];
+                 
+                 let name = aTag.text().trim().replace(/\s+/g, ' ').replace(/Mark as done/ig, '').trim();
+                 if (!name) name = $c(el).find(".instancename").text().trim().replace(/\s+/g, ' ').replace(/Mark as done/ig, '').trim();
+
+                 let dueDate = null;
+                 const dateText = $c(el).find(".activitydate, [data-type='duedate'], .duedate, time").text();
+                 if (dateText) {
+                     const raw = dateText.replace(/Due:/i, '').trim();
+                     const parsed = Date.parse(raw);
+                     if (!isNaN(parsed)) dueDate = new Date(parsed).toISOString();
+                 }
+
+                 let status = "notsubmitted";
+                 const statusText = $c(el).find(".submissionstatus, .completion-badge").text().toLowerCase();
+                 if (statusText.includes("submitted") || statusText.includes("complete") || statusText.includes("turned in")) status = "submitted";
+                 else if (statusText.includes("graded")) status = "graded";
+
+                 allActivities.push({
+                    user_id: userId,
+                    course_id: course.course_id,
+                    activity_id: `${course.course_id}_${activityId}`,
+                    activity_name: name || "Activity",
+                    activity_type: type,
+                    due_date: dueDate,
+                    description: null,
+                    submission_status: status,
+                    grade: null,
+                    activity_url: href.startsWith("http") ? href : `${BULMS_URL}${href}`,
+                    synced_at: new Date().toISOString()
+                 });
+            });
+        } catch(e) {
+           console.log(`[BULMS] Error scraping HTML for course ${course.course_id}: ${e.message}`);
+        }
     }
 
-    // Determine new activities
     const { data: existingIds } = await supabase.from("bulms_activities").select("activity_id").eq("user_id", userId);
     const knownIds = new Set((existingIds || []).map((r) => r.activity_id));
     const newCount = allActivities.filter((a) => !knownIds.has(a.activity_id)).length;
@@ -159,27 +213,18 @@ async function syncUserData(userId, triggeredBy = "auto") {
       await supabase.from("bulms_activities").upsert(allActivities, { onConflict: "user_id,activity_id" });
     }
 
-    // Update Session Status
-    await supabase.from("bulms_sessions").update({ 
-      moodle_username: siteInfo.fullname,
-      moodle_user_id: moodleUserId.toString(),
-      last_verified_at: new Date().toISOString(), 
-      updated_at: new Date().toISOString() 
+    await supabase.from("bulms_sessions").update({
+       moodle_username: userName,
+       moodle_user_id: moodleUserId,
+       last_verified_at: new Date().toISOString(),
+       updated_at: new Date().toISOString()
     }).eq("user_id", userId);
-    
-    await finishLog({ status: "success", subjects_count: enrolledCourses.length, activities_count: allActivities.length, new_activities: newCount });
 
-    return { subjects: enrolledCourses, activities: allActivities, newCount, error: null };
+    await finishLog({ status: "success", subjects_count: courses.length, activities_count: allActivities.length, new_activities: newCount });
+
+    return { subjects: courses, activities: allActivities, newCount, error: null };
   } catch (err) {
-    console.error(`[BULMS API] syncUserData error for ${userId}:`, err.message);
-    
-    // If it's an invalid token error from Moodle, mark session expired
-    if (err.message.includes("Invalid token")) {
-      await supabase.from("bulms_sessions").update({ status: "expired", updated_at: new Date().toISOString() }).eq("user_id", userId);
-      await finishLog({ status: "session_expired", error_message: "Token expired or invalid." });
-      return { error: "session_expired" };
-    }
-
+    console.error(`[BULMS Cheerio] syncUserData error for ${userId}:`, err.message);
     await finishLog({ status: "failed", error_message: err.message?.slice(0, 300) });
     return { error: err.message };
   }
@@ -188,17 +233,14 @@ async function syncUserData(userId, triggeredBy = "auto") {
 async function validateSession(userId) {
   const { data: session } = await supabase.from("bulms_sessions").select("*").eq("user_id", userId).single();
   if (!session || session.status !== "active") return false;
-  
   try {
-    const token = decryptToken(session.cookies_encrypted, session.iv, session.auth_tag);
-    await fetchMoodle(token, "core_webservice_get_site_info");
-    return true;
-  } catch (err) {
-    if (err.message.includes("Invalid token")) {
-      await supabase.from("bulms_sessions").update({ status: "expired", updated_at: new Date().toISOString() }).eq("user_id", userId);
-    }
-    return false;
-  }
+    let cookies = decryptCookies(session.cookies_encrypted, session.iv, session.auth_tag);
+    let val = Array.isArray(cookies) ? cookies.find(x => x.name === "MoodleSession")?.value : cookies;
+    const html = await fetchHtml(BULMS_HOME_URL, val);
+    const valid = !(html.includes("login/index.php") || html.includes("Log in to the site"));
+    if (!valid) await supabase.from("bulms_sessions").update({ status: "expired" }).eq("user_id", userId);
+    return valid;
+  } catch { return false; }
 }
 
 module.exports = { startLinkSession, syncUserData, validateSession, encryptCookies, decryptCookies };
