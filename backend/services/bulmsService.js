@@ -116,42 +116,46 @@ async function scrapeCourses(page) {
 
     // Force scroll to trigger any lazy-loaded course cards
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await new Promise(res => setTimeout(res, 2000));
+    
+    console.log(`[BULMS] Authenticated successfully. Waiting for courses to render...`);
 
-    // Broadest possible wait for course links or generic cards
-    await waitForAny(page, [
-      ".card", 
-      ".coursebox", 
-      "[data-region='course-events-container']",
-      "a[href*='course/view.php?id=']"
-    ], 15_000);
+    // FIX 1: Explicitly wait for at least one course link to appear anywhere on the page
+    // This forces Puppeteer to wait out Moodle's slow AJAX requests
+    await page.waitForFunction(() => {
+      return document.querySelectorAll("a[href*='course/view.php?id=']").length > 0;
+    }, { timeout: 15000 }).catch(() => console.log("[BULMS] Timeout waiting for course links. Checking fallbacks..."));
+
+    await new Promise(res => setTimeout(res, 1500));
 
     const evaluateLogic = (baseUrl) => {
       const courseMap = new Map();
 
-      // Find EVERY link that points to a course
+      // FIX 2: Grab EVERY link. We no longer ignore the nav-drawer or top menus! 
+      // If the main dashboard AJAX is slow, the menus always have your courses instantly.
       document.querySelectorAll("a[href*='course/view.php?id=']").forEach((a) => {
-        // Exclude sidebar/nav menus
-        if (a.closest('#nav-drawer') || a.closest('.dropdown-menu')) return;
-
         const href = a.getAttribute("href");
         const match = href.match(/[?&]id=(\d+)/);
         if (!match) return;
         
         const courseId = match[1];
+        const isMenuLink = a.closest('#nav-drawer') || a.closest('.dropdown-menu') || a.closest('nav');
 
         if (!courseMap.has(courseId)) {
-          courseMap.set(courseId, { id: courseId, textSegments: [], card: null, href: href });
+          courseMap.set(courseId, { id: courseId, textSegments: [], card: null, href: href, isMenuLink });
         }
 
         const data = courseMap.get(courseId);
         
-        // Save the closest physical card if we find one to extract metadata
-        if (!data.card) {
+        // Upgrade from menu link to main card link if we find one
+        if (data.isMenuLink && !isMenuLink) {
+          data.isMenuLink = false;
+        }
+
+        // Save the closest physical card if we find one in the main body
+        if (!data.card && !isMenuLink) {
           data.card = a.closest('.card, .coursebox, .dashboard-card, .my-course-item, [data-region="course-events-container"]');
         }
 
-        // Collect all text attached to this course ID
         const text = a.textContent.trim();
         if (text) data.textSegments.push(text);
       });
@@ -171,12 +175,11 @@ async function scrapeCourses(page) {
           if (catEl) category = catEl.textContent.trim();
         }
 
-        // Fallback to the largest text snippet we found across all links for this ID
+        // Fallback to the largest text snippet we found across all links
         if (!courseName || !courseName.trim()) {
           courseName = data.textSegments.sort((a, b) => b.length - a.length)[0] || "";
         }
 
-        // Clean up Moodle screen-reader text and spacing
         courseName = courseName
           .replace(/Course image/ig, '')
           .replace(/Star course/ig, '')
@@ -185,6 +188,7 @@ async function scrapeCourses(page) {
           .replace(/\s+/g, ' ')
           .trim();
 
+        // Safety check to ensure it's actually a course name
         if (courseName.length > 3) {
           results.push({
             course_id: courseId,
@@ -213,15 +217,23 @@ async function scrapeCourses(page) {
       }
     }
 
-    // Fallback to Moodle 4.x /my/courses.php if dashboard fails
+    // Fallback to Moodle 4.x /my/courses.php if dashboard completely fails
     if (!courses || courses.length === 0) {
       console.log(`[BULMS] 0 courses on /my/, trying /my/courses.php...`);
       await page.goto(`${BULMS_URL}/my/courses.php`, { waitUntil: "domcontentloaded", timeout: SCRAPE_TIMEOUT });
-      await new Promise(res => setTimeout(res, 4000));
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await new Promise(res => setTimeout(res, 2000));
+      await new Promise(res => setTimeout(res, 3000));
       
+      await page.waitForFunction(() => {
+        return document.querySelectorAll("a[href*='course/view.php?id=']").length > 0;
+      }, { timeout: 10000 }).catch(() => null);
+
       courses = await page.evaluate(evaluateLogic, BULMS_URL);
+    }
+
+    // FIX 3: Extreme fallback debugging. If it STILL fails, log the page text so we can see if Moodle is throwing an error.
+    if (!courses || courses.length === 0) {
+      const pageSnip = await page.evaluate(() => document.body.innerText.substring(0, 500).replace(/\n/g, ' '));
+      console.log(`[BULMS DEBUG] No courses found. Page text snippet: ${pageSnip}`);
     }
 
     return courses || [];
