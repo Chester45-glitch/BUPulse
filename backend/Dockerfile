@@ -53,8 +53,8 @@ ENV BULMS_HEADLESS=true
 # when package.json changes)
 COPY package*.json ./
 
-# npm ci triggers Puppeteer's postinstall which downloads Chrome (~170 MB)
-RUN npm ci --omit=dev
+# FIXED: Reverted to npm install because package-lock.json is out of sync
+RUN npm install --omit=dev
 
 # Copy the rest of the source
 COPY . .
