@@ -12,6 +12,7 @@ import ProfessorDashboard from "./pages/ProfessorDashboard";
 import ParentDashboard from "./pages/ParentDashboard";
 import Schedule from "./pages/Schedule";
 import Attendance from "./pages/Attendance";
+import BulmsSync from "./pages/BulmsSync";   // ← NEW
 import Layout from "./components/Layout";
 
 const Spinner = () => (
@@ -63,6 +64,7 @@ export default function App() {
           <Route path="pending-activities" element={<PendingActivities />} />
           <Route path="schedule"           element={<Schedule />} />
           <Route path="attendance"         element={<Attendance />} />
+          <Route path="bulms-sync"         element={<BulmsSync />} />  {/* ← NEW */}
         </Route>
 
         {/* ── Professor routes ────────────────────────────────────── */}
