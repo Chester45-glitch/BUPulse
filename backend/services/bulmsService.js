@@ -6,15 +6,6 @@
  * 2. Captures and encrypts session cookies
  * 3. Scrapes subjects, activities, and due dates from Moodle
  * 4. Detects session expiry and marks the account as disconnected
- *
- * DEPLOYMENT NOTE:
- * - Development: headless: false opens a real visible window — no setup needed.
- * - Production server (Railway / Render / VPS):
- * apt-get install -y xvfb chromium-browser
- * PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
- * Start server with: xvfb-run -a node server.js
- * OR use headless: "new" (Chrome headless) with a display-less server.
- * The BULMS_HEADLESS env var controls this (default: false for local dev).
  */
 
 const puppeteer  = require("puppeteer");
@@ -25,9 +16,9 @@ const supabase   = require("../db/supabase");
 const BULMS_URL        = process.env.BULMS_URL        || "https://bulms.bicol-u.edu.ph";
 const BULMS_LOGIN_URL  = `${BULMS_URL}/login/index.php`;
 const BULMS_MY_URL     = `${BULMS_URL}/my/`;
-const COOKIE_KEY       = process.env.BULMS_COOKIE_KEY || null; // 32-byte hex key for AES-256-GCM
-const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;  // 5 min for user to complete Google OAuth
-const SCRAPE_TIMEOUT   = 60_000;          // 1 min total for all scraping
+const COOKIE_KEY       = process.env.BULMS_COOKIE_KEY || null; 
+const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;  
+const SCRAPE_TIMEOUT   = 60_000;          
 const IS_HEADLESS      = process.env.BULMS_HEADLESS === "true" || process.env.NODE_ENV === "production";
 
 // ── Encryption helpers ────────────────────────────────────────────────────────
@@ -106,103 +97,106 @@ async function waitForAny(page, selectors, timeout = 15_000) {
   return found;
 }
 
-// ── Detect if page is a login page (session expired) ─────────────────────────
 function isLoginPage(url) {
   return (
     url.includes("/login/index.php") ||
     url.includes("/login/oauth2") ||
-    url.includes("accounts.google.com") ||
-    url.includes("login")
+    url.includes("accounts.google.com")
   );
 }
 
-// ── Scrape all courses from the My Courses dashboard ─────────────────────────
+// ── Bulletproof Course Scraper ───────────────────────────────────────────────
 async function scrapeCourses(page) {
   try {
-    await page.goto(`${BULMS_URL}/my/`, { waitUntil: "networkidle2", timeout: SCRAPE_TIMEOUT });
+    await page.goto(`${BULMS_URL}/my/`, { waitUntil: "domcontentloaded", timeout: SCRAPE_TIMEOUT });
 
-    // Wait for initial JS redirects to settle
+    // Wait for Moodle's initial dashboard scripts to boot up
     await new Promise(res => setTimeout(res, 3000));
     if (isLoginPage(page.url())) return null;
 
-    // FIX 1: Removed "#region-main" because it loads instantly. 
-    // Now we wait specifically for course cards or actual course links to render.
+    // Force scroll to trigger any lazy-loaded course cards
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await new Promise(res => setTimeout(res, 2000));
+
+    // Broadest possible wait for course links or generic cards
     await waitForAny(page, [
-      ".dashboard-card",
-      ".course-info-container",
-      ".coursename",
-      ".my-course-item",
+      ".card", 
+      ".coursebox", 
+      "[data-region='course-events-container']",
       "a[href*='course/view.php?id=']"
     ], 15_000);
 
-    // Give AJAX a moment to fully populate the DOM
-    await new Promise(res => setTimeout(res, 2000));
-
     const evaluateLogic = (baseUrl) => {
+      const courseMap = new Map();
+
+      // Find EVERY link that points to a course
+      document.querySelectorAll("a[href*='course/view.php?id=']").forEach((a) => {
+        // Exclude sidebar/nav menus
+        if (a.closest('#nav-drawer') || a.closest('.dropdown-menu')) return;
+
+        const href = a.getAttribute("href");
+        const match = href.match(/[?&]id=(\d+)/);
+        if (!match) return;
+        
+        const courseId = match[1];
+
+        if (!courseMap.has(courseId)) {
+          courseMap.set(courseId, { id: courseId, textSegments: [], card: null, href: href });
+        }
+
+        const data = courseMap.get(courseId);
+        
+        // Save the closest physical card if we find one to extract metadata
+        if (!data.card) {
+          data.card = a.closest('.card, .coursebox, .dashboard-card, .my-course-item, [data-region="course-events-container"]');
+        }
+
+        // Collect all text attached to this course ID
+        const text = a.textContent.trim();
+        if (text) data.textSegments.push(text);
+      });
+
       const results = [];
 
-      // Strategy 1: Moodle 4.x dashboard cards
-      document.querySelectorAll(".dashboard-card, .course-card").forEach((card) => {
-        const nameEl   = card.querySelector(".coursename a, .card-title a, h3 a, h4 a");
-        const catEl    = card.querySelector(".category-name, .course-category");
-        const shortEl  = card.querySelector(".shortname, [data-field='shortname']");
-        const href     = nameEl?.getAttribute("href") || "";
-        const match    = href.match(/[?&]id=(\d+)/);
-        if (nameEl && match) {
+      courseMap.forEach((data, courseId) => {
+        let courseName = "";
+        let category = null;
+
+        // Extract from structured card if available
+        if (data.card) {
+          const titleEl = data.card.querySelector(".coursename, .card-title, h3, h4, .multiline");
+          if (titleEl) courseName = titleEl.textContent;
+          
+          const catEl = data.card.querySelector(".category-name, .text-muted, .course-category");
+          if (catEl) category = catEl.textContent.trim();
+        }
+
+        // Fallback to the largest text snippet we found across all links for this ID
+        if (!courseName || !courseName.trim()) {
+          courseName = data.textSegments.sort((a, b) => b.length - a.length)[0] || "";
+        }
+
+        // Clean up Moodle screen-reader text and spacing
+        courseName = courseName
+          .replace(/Course image/ig, '')
+          .replace(/Star course/ig, '')
+          .replace(/Course is starred/ig, '')
+          .replace(/\n/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (courseName.length > 3) {
           results.push({
-            course_id:   match[1],
-            course_name: nameEl.textContent.trim(),
-            short_name:  shortEl?.textContent?.trim() || null,
-            category:    catEl?.textContent?.trim()   || null,
-            course_url:  href,
+            course_id: courseId,
+            course_name: courseName,
+            short_name: null,
+            category: category,
+            course_url: data.href.startsWith("http") ? data.href : `${baseUrl}${data.href}`,
           });
         }
       });
 
-      // Strategy 2: classic enrolled-courses list
-      if (results.length === 0) {
-        document.querySelectorAll(".course-info-container, .coursename, .enrolled-course-card").forEach((el) => {
-          const nameEl = el.querySelector("a") || el.closest("a");
-          if (!nameEl) return;
-          const href  = nameEl.getAttribute("href") || "";
-          const match = href.match(/[?&]id=(\d+)/);
-          if (match) {
-            results.push({
-              course_id:   match[1],
-              course_name: (el.querySelector(".course-title, h3, h4") || nameEl).textContent.trim(),
-              short_name:  null,
-              category:    null,
-              course_url:  href.startsWith("http") ? href : `${baseUrl}${href}`,
-            });
-          }
-        });
-      }
-
-      // Strategy 3: navigation block & raw links fallback
-      if (results.length === 0) {
-        document.querySelectorAll(".type_course > a, [data-key='mycourses'] a, a[href*='course/view.php?id=']").forEach((a) => {
-          const href  = a.getAttribute("href") || "";
-          const match = href.match(/[?&]id=(\d+)/);
-          // Ignore general links that aren't courses
-          if (match && a.textContent.trim() && !a.closest('#nav-drawer')) {
-            results.push({
-              course_id:   match[1],
-              course_name: a.textContent.trim(),
-              short_name:  null,
-              category:    null,
-              course_url:  href,
-            });
-          }
-        });
-      }
-
-      // Deduplicate by course_id
-      const seen = new Set();
-      return results.filter((c) => {
-        if (seen.has(c.course_id)) return false;
-        seen.add(c.course_id);
-        return true;
-      });
+      return results;
     };
 
     let courses;
@@ -219,31 +213,15 @@ async function scrapeCourses(page) {
       }
     }
 
-    // FIX 2: MOODLE 4.x FALLBACK
-    // If we still found 0 courses on /my/, they might be hiding on /my/courses.php
+    // Fallback to Moodle 4.x /my/courses.php if dashboard fails
     if (!courses || courses.length === 0) {
-      console.log(`[BULMS] 0 courses found on dashboard. Trying Moodle 4.x /my/courses.php ...`);
-      await page.goto(`${BULMS_URL}/my/courses.php`, { waitUntil: "networkidle2", timeout: SCRAPE_TIMEOUT });
-      
-      await new Promise(res => setTimeout(res, 3000));
-      await waitForAny(page, [
-        ".dashboard-card",
-        ".course-card",
-        ".coursename",
-        "a[href*='course/view.php?id=']"
-      ], 10_000);
+      console.log(`[BULMS] 0 courses on /my/, trying /my/courses.php...`);
+      await page.goto(`${BULMS_URL}/my/courses.php`, { waitUntil: "domcontentloaded", timeout: SCRAPE_TIMEOUT });
+      await new Promise(res => setTimeout(res, 4000));
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await new Promise(res => setTimeout(res, 2000));
-
-      try {
-        courses = await page.evaluate(evaluateLogic, BULMS_URL);
-      } catch (evalErr) {
-        if (evalErr.message.includes("Execution context was destroyed")) {
-          await new Promise(res => setTimeout(res, 3000));
-          courses = await page.evaluate(evaluateLogic, BULMS_URL);
-        } else {
-          throw evalErr;
-        }
-      }
+      
+      courses = await page.evaluate(evaluateLogic, BULMS_URL);
     }
 
     return courses || [];
@@ -257,27 +235,20 @@ async function scrapeCourses(page) {
 async function scrapeActivitiesForCourse(page, courseId, courseUrl) {
   try {
     const url = courseUrl || `${BULMS_URL}/course/view.php?id=${courseId}`;
-    await page.goto(url, { waitUntil: "networkidle2", timeout: SCRAPE_TIMEOUT });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: SCRAPE_TIMEOUT });
 
-    // FIX: Add safety delay here as well
     await new Promise(res => setTimeout(res, 2000));
-
-    if (isLoginPage(page.url())) return null; // session expired
+    if (isLoginPage(page.url())) return null;
 
     await waitForAny(page, ["#region-main", ".course-content", ".topics", ".weeks"], 15_000);
 
-    await new Promise(res => setTimeout(res, 1000));
-
     const evaluateLogic = (cid, baseUrl) => {
       const results = [];
-
-      // ── Unified activity selector (works for most Moodle 3.x/4.x themes) ──
       const activityEls = document.querySelectorAll(
         ".activity, .activity-item, [data-activityname], li.activity"
       );
 
       activityEls.forEach((el) => {
-        // Determine activity type from class list
         const classList = el.className || "";
         let type = "resource";
         const typeMap = {
@@ -296,32 +267,23 @@ async function scrapeActivitiesForCourse(page, courseId, courseUrl) {
           if (classList.includes(cls)) { type = t; break; }
         }
 
-        // Only capture graded / submittable types
         if (!["assign", "quiz", "forum"].includes(type)) return;
 
-        const nameEl   = el.querySelector(".instancename, .activity-name, [data-activityname], a .activityname") ||
-                         el.querySelector("a");
-        const linkEl   = el.querySelector("a[href]");
-        const href     = linkEl?.getAttribute("href") || "";
-
-        // Extract cmid from URL
-        const cmMatch  = href.match(/[?&]id=(\d+)/);
-        const activityId = el.getAttribute("id")?.replace("module-", "") ||
-                           el.dataset?.id || cmMatch?.[1] || null;
+        const nameEl = el.querySelector(".instancename, .activity-name, [data-activityname], a .activityname") || el.querySelector("a");
+        const linkEl = el.querySelector("a[href]");
+        const href   = linkEl?.getAttribute("href") || "";
+        const cmMatch = href.match(/[?&]id=(\d+)/);
+        const activityId = el.getAttribute("id")?.replace("module-", "") || el.dataset?.id || cmMatch?.[1] || null;
 
         if (!activityId || !nameEl) return;
 
-        // Due date — Moodle 4.x puts it in .activity-basis > span or data attributes
         let dueDate = null;
-        const dueDateEl = el.querySelector(
-          ".activity-basis .text-truncate, .activitydate, [data-type='duedate'], .duedate"
-        );
+        const dueDateEl = el.querySelector(".activity-basis .text-truncate, .activitydate, [data-type='duedate'], .duedate");
         if (dueDateEl) {
           const raw = dueDateEl.textContent.trim().replace(/^Due:\s*/i, "");
           const parsed = Date.parse(raw);
           if (!isNaN(parsed)) dueDate = new Date(parsed).toISOString();
         }
-        // Fall back to title attribute on date elements
         if (!dueDate) {
           const dateEl = el.querySelector("time, [title*='due'], [title*='Due']");
           if (dateEl) {
@@ -333,22 +295,18 @@ async function scrapeActivitiesForCourse(page, courseId, courseUrl) {
           }
         }
 
-        // Completion / submission status badge
-        const statusEl = el.querySelector(
-          ".completion-badge, .submissionstatus, [data-completionstate], .autocompletion"
-        );
+        const statusEl = el.querySelector(".completion-badge, .submissionstatus, [data-completionstate], .autocompletion");
         let submissionStatus = "notsubmitted";
         if (statusEl) {
           const txt = statusEl.textContent.toLowerCase();
-          if (txt.includes("submitted") || txt.includes("turned in")) submissionStatus = "submitted";
-          else if (txt.includes("graded"))  submissionStatus = "graded";
-          else if (txt.includes("complete")) submissionStatus = "submitted";
+          if (txt.includes("submitted") || txt.includes("turned in") || txt.includes("complete")) submissionStatus = "submitted";
+          else if (txt.includes("graded")) submissionStatus = "graded";
         }
 
         results.push({
           course_id:          cid,
           activity_id:        `${cid}_${activityId}`,
-          activity_name:      nameEl.textContent.trim().replace(/\s+/g, " "),
+          activity_name:      nameEl.textContent.trim().replace(/\s+/g, " ").replace(/Mark as done/ig, '').trim(),
           activity_type:      type,
           due_date:           dueDate,
           description:        null,
@@ -361,13 +319,11 @@ async function scrapeActivitiesForCourse(page, courseId, courseUrl) {
       return results;
     };
 
-    // FIX: Catch context destruction for activities as well
     let activities;
     try {
       activities = await page.evaluate(evaluateLogic, courseId, BULMS_URL);
     } catch (evalErr) {
       if (evalErr.message.includes("Execution context was destroyed")) {
-        console.log(`[BULMS] Context destroyed in activities for ${courseId}, waiting 3s...`);
         await new Promise(res => setTimeout(res, 3000));
         if (isLoginPage(page.url())) return null;
         activities = await page.evaluate(evaluateLogic, courseId, BULMS_URL);
@@ -383,74 +339,10 @@ async function scrapeActivitiesForCourse(page, courseId, courseUrl) {
   }
 }
 
-// ── Scrape submission status from individual assignment pages ──────────────────
-async function enrichActivityDetails(page, activity) {
-  if (activity.activity_type !== "assign") return activity;
-  try {
-    await page.goto(activity.activity_url, { waitUntil: "domcontentloaded", timeout: 30_000 });
-    if (isLoginPage(page.url())) return activity;
-
-    const details = await page.evaluate(() => {
-      // Due date from assignment details table
-      let dueDate = null;
-      document.querySelectorAll(".submissioninfotable tr, .generaltable tr").forEach((row) => {
-        const label = row.querySelector("th, td:first-child")?.textContent?.toLowerCase() || "";
-        if (label.includes("due date") || label.includes("due on")) {
-          const val = row.querySelector("td:last-child, td:nth-child(2)")?.textContent?.trim();
-          if (val) {
-            const p = Date.parse(val);
-            if (!isNaN(p)) dueDate = new Date(p).toISOString();
-          }
-        }
-      });
-
-      // Submission status
-      let status = null;
-      const submEl = document.querySelector(".submissionstatussubmitted, .submissionstatusnotsubmitted, [data-region='assignment-status'] .badge");
-      if (submEl) {
-        const txt = submEl.textContent.toLowerCase();
-        if (txt.includes("submitted")) status = "submitted";
-        else if (txt.includes("graded")) status = "graded";
-        else status = "notsubmitted";
-      }
-
-      // Grade
-      let grade = null;
-      const gradeEl = document.querySelector(".gradingform_points, .feedback .grade, .grade");
-      if (gradeEl) grade = gradeEl.textContent.trim();
-
-      // Description
-      let description = null;
-      const descEl = document.querySelector(".activity-description, .intro, [data-region='assign-intro']");
-      if (descEl) description = descEl.textContent.trim().slice(0, 500);
-
-      return { dueDate, status, grade, description };
-    });
-
-    return {
-      ...activity,
-      due_date:          details.dueDate || activity.due_date,
-      submission_status: details.status  || activity.submission_status,
-      grade:             details.grade   || activity.grade,
-      description:       details.description,
-    };
-  } catch {
-    return activity; // fail gracefully
-  }
-}
-
 // ════════════════════════════════════════════════════════════════════════════════
 // PUBLIC API
 // ════════════════════════════════════════════════════════════════════════════════
 
-/**
- * startLinkSession — launches Puppeteer, navigates to BULMS login,
- * waits for the user to authenticate, then extracts and stores cookies.
- *
- * @param {string} userId      - BUPulse user UUID
- * @param {string} sessionToken - unique token to track this link attempt
- * @returns {Promise<void>}    - resolves once cookies are saved (or rejects on timeout/error)
- */
 async function startLinkSession(userId, sessionToken) {
   let browser;
   const startedAt = Date.now();
@@ -458,20 +350,15 @@ async function startLinkSession(userId, sessionToken) {
   try {
     await updateLinkSession(sessionToken, { status: "waiting" });
 
-    browser = await launchBrowser(false); // Always headful for login — user must see the window
+    browser = await launchBrowser(false); 
     const page = await browser.newPage();
 
-    // Stealth: remove webdriver fingerprint
     await page.evaluateOnNewDocument(() => {
       Object.defineProperty(navigator, "webdriver", { get: () => undefined });
     });
 
     await page.goto(BULMS_LOGIN_URL, { waitUntil: "domcontentloaded", timeout: 30_000 });
 
-    console.log(`[BULMS] Browser opened for user ${userId}. Waiting for manual login…`);
-
-    // ── Wait for user to complete Google OAuth (up to LOGIN_TIMEOUT_MS) ─────
-    // We watch for any of the common post-login dashboard selectors
     const loginSuccess = await page.waitForFunction(
       (myUrl) => {
         const url = window.location.href;
@@ -485,19 +372,16 @@ async function startLinkSession(userId, sessionToken) {
     ).catch(() => null);
 
     if (!loginSuccess) {
-      await updateLinkSession(sessionToken, { status: "timeout", error: "Login timed out after 5 minutes." });
+      await updateLinkSession(sessionToken, { status: "timeout", error: "Login timed out." });
       return;
     }
 
-    console.log(`[BULMS] Login detected for user ${userId}. Extracting cookies…`);
     await updateLinkSession(sessionToken, { status: "scraping" });
 
-    // ── Extract all cookies ────────────────────────────────────────────────
     const cookies = await page.cookies();
     const cookiesJson = JSON.stringify(cookies);
     const { cookies_encrypted, iv, auth_tag } = encryptCookies(cookiesJson);
 
-    // ── Extract BULMS user info if available ───────────────────────────────
     const bulmsUserInfo = await page.evaluate(() => {
       const menuEl = document.querySelector(".usermenu .userbutton, .usertext");
       const profileLink = document.querySelector("a[href*='/user/profile']");
@@ -512,7 +396,6 @@ async function startLinkSession(userId, sessionToken) {
       };
     }).catch(() => ({ moodle_username: null, moodle_user_id: null }));
 
-    // ── Upsert session into DB ─────────────────────────────────────────────
     const { error: sessionErr } = await supabase
       .from("bulms_sessions")
       .upsert({
@@ -530,54 +413,32 @@ async function startLinkSession(userId, sessionToken) {
     if (sessionErr) throw sessionErr;
 
     await updateLinkSession(sessionToken, { status: "done" });
-    console.log(`[BULMS] Session saved for user ${userId}.`);
-
   } catch (err) {
     console.error(`[BULMS] startLinkSession error for ${userId}:`, err.message);
-    await updateLinkSession(sessionToken, {
-      status: "failed",
-      error: err.message?.slice(0, 200),
-    }).catch(() => {});
+    await updateLinkSession(sessionToken, { status: "failed", error: err.message?.slice(0, 200) }).catch(() => {});
   } finally {
     if (browser) await browser.close().catch(() => {});
-    const elapsed = Date.now() - startedAt;
-    console.log(`[BULMS] Link session finished in ${(elapsed / 1000).toFixed(1)}s for user ${userId}.`);
   }
 }
 
-/**
- * syncUserData — uses stored cookies to scrape fresh academic data.
- *
- * @param {string}  userId
- * @param {string}  triggeredBy  - 'auto' | 'manual'
- * @returns {Promise<{subjects, activities, newCount, error}>}
- */
 async function syncUserData(userId, triggeredBy = "auto") {
   const syncStart = Date.now();
   let logId;
 
-  // Create sync log entry
   const { data: logRow } = await supabase
     .from("bulms_sync_logs")
     .insert({ user_id: userId, triggered_by: triggeredBy, status: "running" })
-    .select("id")
-    .single();
+    .select("id").single();
   logId = logRow?.id;
 
   const finishLog = async (patch) => {
     if (!logId) return;
-    await supabase
-      .from("bulms_sync_logs")
-      .update({ ...patch, finished_at: new Date().toISOString(), duration_ms: Date.now() - syncStart })
-      .eq("id", logId);
+    await supabase.from("bulms_sync_logs").update({ ...patch, finished_at: new Date().toISOString(), duration_ms: Date.now() - syncStart }).eq("id", logId);
   };
 
-  // ── Load session ──────────────────────────────────────────────────────────
   const { data: session, error: sessErr } = await supabase
     .from("bulms_sessions")
-    .select("*")
-    .eq("user_id", userId)
-    .single();
+    .select("*").eq("user_id", userId).single();
 
   if (sessErr || !session) {
     await finishLog({ status: "failed", error_message: "No BULMS session found." });
@@ -588,7 +449,6 @@ async function syncUserData(userId, triggeredBy = "auto") {
     return { error: "session_expired" };
   }
 
-  // ── Decrypt cookies ───────────────────────────────────────────────────────
   let cookies;
   try {
     cookies = decryptCookies(session.cookies_encrypted, session.iv, session.auth_tag);
@@ -599,125 +459,64 @@ async function syncUserData(userId, triggeredBy = "auto") {
 
   let browser;
   try {
-    browser = await launchBrowser(true); // headless for scraping
+    browser = await launchBrowser(true); 
     const page = await browser.newPage();
 
-    // Stealth
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
-    });
+    await page.evaluateOnNewDocument(() => { Object.defineProperty(navigator, "webdriver", { get: () => undefined }); });
 
-    // ── Restore session cookies ───────────────────────────────────────────
     const domain = new URL(BULMS_URL).hostname;
     for (const cookie of cookies) {
-      try {
-        await page.setCookie({ ...cookie, domain });
-      } catch {} // skip malformed cookies
+      try { await page.setCookie({ ...cookie, domain }); } catch {} 
     }
 
-    // ── Navigate to dashboard ─────────────────────────────────────────────
-    await page.goto(BULMS_MY_URL, { waitUntil: "networkidle2", timeout: SCRAPE_TIMEOUT });
+    await page.goto(BULMS_MY_URL, { waitUntil: "domcontentloaded", timeout: SCRAPE_TIMEOUT });
 
-    // ── Check if session is still valid ───────────────────────────────────
     if (isLoginPage(page.url())) {
-      await supabase
-        .from("bulms_sessions")
-        .update({ status: "expired", updated_at: new Date().toISOString() })
-        .eq("user_id", userId);
+      await supabase.from("bulms_sessions").update({ status: "expired", updated_at: new Date().toISOString() }).eq("user_id", userId);
       await finishLog({ status: "session_expired", error_message: "Session expired — login required." });
       return { error: "session_expired" };
     }
 
-    // ── Scrape courses ────────────────────────────────────────────────────
     const courses = await scrapeCourses(page);
     if (!courses) {
       await finishLog({ status: "session_expired", error_message: "Redirected to login during scrape." });
-      await supabase
-        .from("bulms_sessions")
-        .update({ status: "expired", updated_at: new Date().toISOString() })
-        .eq("user_id", userId);
+      await supabase.from("bulms_sessions").update({ status: "expired", updated_at: new Date().toISOString() }).eq("user_id", userId);
       return { error: "session_expired" };
     }
 
     console.log(`[BULMS] Scraped ${courses.length} courses for user ${userId}.`);
 
-    // ── Upsert subjects ───────────────────────────────────────────────────
     if (courses.length > 0) {
       const subjectRows = courses.map((c) => ({
-        user_id:     userId,
-        course_id:   c.course_id,
-        course_name: c.course_name,
-        short_name:  c.short_name,
-        category:    c.category,
-        course_url:  c.course_url,
-        synced_at:   new Date().toISOString(),
+        user_id:     userId, course_id: c.course_id, course_name: c.course_name, short_name: c.short_name, category: c.category, course_url: c.course_url, synced_at: new Date().toISOString(),
       }));
-      await supabase
-        .from("bulms_subjects")
-        .upsert(subjectRows, { onConflict: "user_id,course_id" });
+      await supabase.from("bulms_subjects").upsert(subjectRows, { onConflict: "user_id,course_id" });
     }
 
-    // ── Scrape activities per course (limit to first 8 to avoid timeouts) ──
     const allActivities = [];
-    const coursesToScrape = courses.slice(0, 8);
+    const coursesToScrape = courses.slice(0, 8); // Limit to prevent timeout
 
     for (const course of coursesToScrape) {
       const acts = await scrapeActivitiesForCourse(page, course.course_id, course.course_url);
-      if (acts === null) { // session expired mid-scrape
-        break;
-      }
+      if (acts === null) break; 
       allActivities.push(...acts);
     }
 
-    // ── Determine "new" activities (not previously seen) ─────────────────
-    const { data: existingIds } = await supabase
-      .from("bulms_activities")
-      .select("activity_id")
-      .eq("user_id", userId);
-
+    const { data: existingIds } = await supabase.from("bulms_activities").select("activity_id").eq("user_id", userId);
     const knownIds = new Set((existingIds || []).map((r) => r.activity_id));
     const newCount = allActivities.filter((a) => !knownIds.has(a.activity_id)).length;
 
-    // ── Upsert activities ─────────────────────────────────────────────────
     if (allActivities.length > 0) {
       const activityRows = allActivities.map((a) => ({
-        user_id:           userId,
-        course_id:         a.course_id,
-        activity_id:       a.activity_id,
-        activity_name:     a.activity_name,
-        activity_type:     a.activity_type,
-        due_date:          a.due_date,
-        description:       a.description,
-        submission_status: a.submission_status,
-        grade:             a.grade,
-        activity_url:      a.activity_url,
-        synced_at:         new Date().toISOString(),
+        user_id: userId, course_id: a.course_id, activity_id: a.activity_id, activity_name: a.activity_name, activity_type: a.activity_type, due_date: a.due_date, description: a.description, submission_status: a.submission_status, grade: a.grade, activity_url: a.activity_url, synced_at: new Date().toISOString(),
       }));
-      await supabase
-        .from("bulms_activities")
-        .upsert(activityRows, { onConflict: "user_id,activity_id" });
+      await supabase.from("bulms_activities").upsert(activityRows, { onConflict: "user_id,activity_id" });
     }
 
-    // ── Update session last verified ──────────────────────────────────────
-    await supabase
-      .from("bulms_sessions")
-      .update({ last_verified_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-      .eq("user_id", userId);
+    await supabase.from("bulms_sessions").update({ last_verified_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("user_id", userId);
+    await finishLog({ status: "success", subjects_count: courses.length, activities_count: allActivities.length, new_activities: newCount });
 
-    await finishLog({
-      status:           "success",
-      subjects_count:   courses.length,
-      activities_count: allActivities.length,
-      new_activities:   newCount,
-    });
-
-    return {
-      subjects:    courses,
-      activities:  allActivities,
-      newCount,
-      error:       null,
-    };
-
+    return { subjects: courses, activities: allActivities, newCount, error: null };
   } catch (err) {
     console.error(`[BULMS] syncUserData error for ${userId}:`, err.message);
     await finishLog({ status: "failed", error_message: err.message?.slice(0, 300) });
@@ -727,52 +526,24 @@ async function syncUserData(userId, triggeredBy = "auto") {
   }
 }
 
-/**
- * validateSession — quick check: loads BULMS dashboard with stored cookies,
- * returns true if session is still valid, false otherwise.
- */
 async function validateSession(userId) {
-  const { data: session } = await supabase
-    .from("bulms_sessions")
-    .select("*")
-    .eq("user_id", userId)
-    .single();
-
+  const { data: session } = await supabase.from("bulms_sessions").select("*").eq("user_id", userId).single();
   if (!session || session.status !== "active") return false;
-
   let cookies;
   try { cookies = decryptCookies(session.cookies_encrypted, session.iv, session.auth_tag); }
   catch { return false; }
-
   let browser;
   try {
     browser = await launchBrowser(true);
     const page = await browser.newPage();
     const domain = new URL(BULMS_URL).hostname;
-    for (const c of cookies) {
-      try { await page.setCookie({ ...c, domain }); } catch {}
-    }
+    for (const c of cookies) { try { await page.setCookie({ ...c, domain }); } catch {} }
     await page.goto(BULMS_MY_URL, { waitUntil: "domcontentloaded", timeout: 20_000 });
     const valid = !isLoginPage(page.url());
-
-    if (!valid) {
-      await supabase
-        .from("bulms_sessions")
-        .update({ status: "expired", updated_at: new Date().toISOString() })
-        .eq("user_id", userId);
-    }
+    if (!valid) await supabase.from("bulms_sessions").update({ status: "expired", updated_at: new Date().toISOString() }).eq("user_id", userId);
     return valid;
-  } catch {
-    return false;
-  } finally {
-    if (browser) await browser.close().catch(() => {});
-  }
+  } catch { return false; } 
+  finally { if (browser) await browser.close().catch(() => {}); }
 }
 
-module.exports = {
-  startLinkSession,
-  syncUserData,
-  validateSession,
-  decryptCookies,
-  encryptCookies,
-};
+module.exports = { startLinkSession, syncUserData, validateSession, decryptCookies, encryptCookies };
