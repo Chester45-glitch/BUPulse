@@ -58,7 +58,20 @@ export default function Login() {
   const handleLogin = () => {
     setLoading(true);
     const apiBase = import.meta.env.VITE_API_URL || "http://localhost:3001";
-    window.location.href = `${apiBase}/api/auth/google?role=${role}`;
+    const authUrl = `${apiBase}/api/auth/google?role=${role}`;
+    
+    // Detect if the app is running inside an iframe (like a preview environment)
+    // and force the top-level window to navigate to avoid Google clickjacking blocks.
+    try {
+      if (window.top !== window.self) {
+        window.top.location.href = authUrl;
+      } else {
+        window.location.href = authUrl;
+      }
+    } catch (e) {
+      // Fallback in case cross-origin iframe security blocks window.top access
+      window.location.href = authUrl;
+    }
   };
 
   return (
