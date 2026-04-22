@@ -1,16 +1,16 @@
 /**
- * bulmsService.js — Hardened Cheerio Version
+ * bulmsService.js — Hyper-Compatible HTML Version
  */
 
 const cheerio  = require("cheerio");
 const crypto   = require("crypto");
 const supabase = require("../db/supabase");
 
-const BULMS_URL      = process.env.BULMS_URL || "https://bulms.bicol-u.edu.ph";
-const BULMS_DASH_URL = `${BULMS_URL}/my/`; // Switching back to dashboard
-const COOKIE_KEY     = process.env.BULMS_COOKIE_KEY || null;
+const BULMS_URL = process.env.BULMS_URL || "https://bulms.bicol-u.edu.ph";
+// TARGET: The Mobile launch page contains a static list of courses in raw HTML
+const BULMS_STATIC_COURSES = `${BULMS_URL}/admin/tool/mobile/launch.php?service=moodle_mobile_app`;
+const COOKIE_KEY = process.env.BULMS_COOKIE_KEY || null;
 
-// ── Encryption ───────────────────────────────────────────────────────────────
 function getKey() {
   if (!COOKIE_KEY || COOKIE_KEY.length < 64) throw new Error("BULMS_COOKIE_KEY must be a 64-char hex string.");
   return Buffer.from(COOKIE_KEY, "hex");
@@ -33,9 +33,7 @@ function decryptCookies(encrypted, iv, authTag) {
   try { return JSON.parse(decrypted); } catch { return decrypted; }
 }
 
-// ── Native Fetch Helper ──────────────────────────────────────────────────────
 async function fetchHtml(url, sessionCookie) {
-  console.log(`[BULMS] Fetching: ${url}`);
   const response = await fetch(url, {
     headers: {
       "Cookie": `MoodleSession=${sessionCookie}`,
@@ -45,10 +43,6 @@ async function fetchHtml(url, sessionCookie) {
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return await response.text();
 }
-
-// ════════════════════════════════════════════════════════════════════════════════
-// PUBLIC API
-// ════════════════════════════════════════════════════════════════════════════════
 
 async function startLinkSession(userId, sessionToken) {
    await supabase.from("bulms_link_sessions").update({ status: "failed", error: "Manual sync required." }).eq("session_token", sessionToken);
@@ -72,8 +66,8 @@ async function syncUserData(userId, triggeredBy = "auto") {
 
     if (!moodleSessionVal) throw new Error("Invalid session cookie.");
 
-    // 1. Fetch Dashboard
-    const html = await fetchHtml(BULMS_DASH_URL, moodleSessionVal);
+    // 1. Fetch the static course list
+    const html = await fetchHtml(BULMS_STATIC_COURSES, moodleSessionVal);
     const $ = cheerio.load(html);
 
     if (html.includes("login/index.php")) {
@@ -82,21 +76,21 @@ async function syncUserData(userId, triggeredBy = "auto") {
       return { error: "session_expired" };
     }
 
-    // 2. Extract Courses from Dashboard
     const courses = [];
+    // This selector targets the list Moodle generates for "Open in the App"
     $("a[href*='course/view.php?id=']").each((i, el) => {
       const href = $(el).attr("href");
       const match = href.match(/[?&]id=(\d+)/);
       if (!match) return;
       const cid = match[1];
 
-      // Grab course name from text or nearest heading
       let name = $(el).text().trim().replace(/\s+/g, ' ');
-      if (name.length < 5) name = $(el).closest('.card, .coursebox').find('h3, h4, .coursename').text().trim();
-      
-      name = name.replace(/Course image/ig, '').trim();
+      // If text is empty (like an icon), try to find text nearby
+      if (name.length < 2) {
+          name = $(el).parent().text().trim();
+      }
 
-      if (name.length > 3 && !courses.find(c => c.course_id === cid)) {
+      if (name.length > 2 && !courses.find(c => c.course_id === cid)) {
         courses.push({ course_id: cid, course_name: name, course_url: href });
       }
     });
@@ -108,14 +102,14 @@ async function syncUserData(userId, triggeredBy = "auto") {
       await supabase.from("bulms_subjects").upsert(rows, { onConflict: "user_id,course_id" });
     }
 
-    // 3. Extract Activities
+    // 2. Activities (Course pages are usually static enough for Cheerio)
     const allActivities = [];
-    for (const course of courses.slice(0, 10)) {
+    for (const course of courses.slice(0, 8)) {
       try {
         const cHtml = await fetchHtml(course.course_url, moodleSessionVal);
         const $c = cheerio.load(cHtml);
 
-        $c(".activity, .activity-item").each((i, el) => {
+        $c("li.activity").each((i, el) => {
           const aTag = $c(el).find("a[href*='mod/assign/'], a[href*='mod/quiz/']");
           if (!aTag.length) return;
 
@@ -123,20 +117,23 @@ async function syncUserData(userId, triggeredBy = "auto") {
           const cmMatch = href.match(/[?&]id=(\d+)/);
           if (!cmMatch) return;
 
-          const name = aTag.text().trim().replace(/Mark as done/ig, '').trim();
+          // Clean up course name (remove "Mark as done" etc)
+          const rawName = aTag.text().trim();
+          const cleanName = rawName.split(/\n/)[0].replace(/Mark as done/ig, '').trim();
+
           const type = href.includes("quiz") ? "quiz" : "assign";
 
           allActivities.push({
             user_id: userId,
             course_id: course.course_id,
             activity_id: `${course.course_id}_${cmMatch[1]}`,
-            activity_name: name || "Untitled Activity",
+            activity_name: cleanName || "Untitled Activity",
             activity_type: type,
             activity_url: href,
             synced_at: new Date().toISOString()
           });
         });
-      } catch (e) { console.error(`[BULMS] Course Error: ${e.message}`); }
+      } catch (e) { console.log(`[BULMS] Activity Scrape Error: ${e.message}`); }
     }
 
     if (allActivities.length > 0) {
@@ -159,7 +156,7 @@ async function validateSession(userId) {
   try {
     const cookies = decryptCookies(session.cookies_encrypted, session.iv, session.auth_tag);
     const val = Array.isArray(cookies) ? cookies.find(x => x.name === "MoodleSession")?.value : cookies;
-    const html = await fetchHtml(BULMS_DASH_URL, val);
+    const html = await fetchHtml(`${BULMS_URL}/my/`, val);
     return !html.includes("login/index.php");
   } catch { return false; }
 }
