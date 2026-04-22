@@ -182,7 +182,7 @@ function ManualLinkPanel({ onSuccess, isRelink = false }) {
             </button>
           </div>
           {step === 1 && (
-            <button style={{ ...S.btn("primary"), marginTop: 10, fontSize: 12, padding: "7px 14px" }} onClick={() => setStep(2)}>
+            <button style={{ ...S.btn("primary"), marginTop: 10, fontSize: 12, padding: "7px 14px" }} onClick={(e) => { e.stopPropagation(); setStep(2); }}>
               I'm logged in → Next
             </button>
           )}
@@ -214,7 +214,7 @@ function ManualLinkPanel({ onSuccess, isRelink = false }) {
                 click <strong>bulms.bicol-u.edu.ph</strong> → find the row named <strong>MoodleSession</strong> →
                 double-click its <strong>Value</strong> column → copy it (<kbd style={{ background: "var(--bg-tertiary)", padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>Ctrl+C</kbd>).
               </p>
-              <button style={{ ...S.btn("primary"), marginTop: 10, fontSize: 12, padding: "7px 14px" }} onClick={() => setStep(3)}>
+              <button style={{ ...S.btn("primary"), marginTop: 10, fontSize: 12, padding: "7px 14px" }} onClick={(e) => { e.stopPropagation(); setStep(3); }}>
                 I copied it → Next
               </button>
             </>
