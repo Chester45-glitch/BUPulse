@@ -1,0 +1,45 @@
+# ─────────────────────────────────────────────────────────────────
+# render.yaml — BUPulse Render deployment config
+# Place this file at the ROOT of your backend folder (next to server.js)
+# Then connect your GitHub repo in the Render dashboard and it will
+# auto-detect this file.
+# ─────────────────────────────────────────────────────────────────
+services:
+  - type: web
+    name: bupulse-backend
+    runtime: docker                    # Use our Dockerfile (not native Node)
+    dockerfilePath: ./Dockerfile       # Path relative to repo root
+    plan: starter                      # starter = $7/mo, never sleeps
+                                       # free tier WILL sleep → kills Puppeteer sessions
+    region: singapore                  # Closest to Philippines (Asia/Manila)
+    branch: main                       # Deploy from this Git branch
+
+    # ── Health check ────────────────────────────────────────────
+    healthCheckPath: /api/health
+
+    # ── Environment variables ────────────────────────────────────
+    # Set sensitive values in the Render dashboard, not here.
+    # The envVarGroups block below shows which keys are needed.
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"
+      - key: BULMS_HEADLESS
+        value: "true"
+      - key: PUPPETEER_EXECUTABLE_PATH
+        value: /usr/bin/google-chrome-stable
+      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
+        value: "true"
+
+      # ── Set these in Render Dashboard → Environment ──────────
+      # SUPABASE_URL
+      # SUPABASE_SERVICE_ROLE_KEY
+      # GOOGLE_CLIENT_ID
+      # GOOGLE_CLIENT_SECRET
+      # GOOGLE_REDIRECT_URI        → https://api.yourdomain.com/api/auth/google/callback
+      # JWT_SECRET
+      # SESSION_SECRET
+      # FRONTEND_URL               → https://yourdomain.com
+      # BULMS_URL                  → https://bulms.bicol-u.edu.ph
+      # BULMS_COOKIE_KEY           → 64-char hex string
