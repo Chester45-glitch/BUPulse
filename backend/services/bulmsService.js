@@ -121,22 +121,22 @@ async function scrapeCourses(page) {
   try {
     await page.goto(`${BULMS_URL}/my/`, { waitUntil: "networkidle2", timeout: SCRAPE_TIMEOUT });
 
-    // FIX: Wait for Moodle's delayed JS redirects to finish
+    // Wait for initial JS redirects to settle
     await new Promise(res => setTimeout(res, 3000));
+    if (isLoginPage(page.url())) return null;
 
-    if (isLoginPage(page.url())) return null; // session expired
-
-    // Try multiple possible Moodle dashboard selectors
+    // FIX 1: Removed "#region-main" because it loads instantly. 
+    // Now we wait specifically for course cards or actual course links to render.
     await waitForAny(page, [
       ".dashboard-card",
       ".course-info-container",
       ".coursename",
-      "#region-main",
       ".my-course-item",
-    ], 20_000);
+      "a[href*='course/view.php?id=']"
+    ], 15_000);
 
-    // FIX: One more small delay to ensure DOM is fully settled before evaluating
-    await new Promise(res => setTimeout(res, 1000));
+    // Give AJAX a moment to fully populate the DOM
+    await new Promise(res => setTimeout(res, 2000));
 
     const evaluateLogic = (baseUrl) => {
       const results = [];
@@ -178,12 +178,13 @@ async function scrapeCourses(page) {
         });
       }
 
-      // Strategy 3: navigation block courses
+      // Strategy 3: navigation block & raw links fallback
       if (results.length === 0) {
-        document.querySelectorAll(".type_course > a, [data-key='mycourses'] a").forEach((a) => {
+        document.querySelectorAll(".type_course > a, [data-key='mycourses'] a, a[href*='course/view.php?id=']").forEach((a) => {
           const href  = a.getAttribute("href") || "";
           const match = href.match(/[?&]id=(\d+)/);
-          if (match) {
+          // Ignore general links that aren't courses
+          if (match && a.textContent.trim() && !a.closest('#nav-drawer')) {
             results.push({
               course_id:   match[1],
               course_name: a.textContent.trim(),
@@ -204,18 +205,44 @@ async function scrapeCourses(page) {
       });
     };
 
-    // FIX: Catch context destruction and retry automatically
     let courses;
     try {
       courses = await page.evaluate(evaluateLogic, BULMS_URL);
     } catch (evalErr) {
       if (evalErr.message.includes("Execution context was destroyed")) {
-        console.log("[BULMS] Context destroyed in courses, waiting 3s to retry...");
+        console.log("[BULMS] Context destroyed, waiting 3s to retry...");
         await new Promise(res => setTimeout(res, 3000));
         if (isLoginPage(page.url())) return null;
         courses = await page.evaluate(evaluateLogic, BULMS_URL);
       } else {
         throw evalErr;
+      }
+    }
+
+    // FIX 2: MOODLE 4.x FALLBACK
+    // If we still found 0 courses on /my/, they might be hiding on /my/courses.php
+    if (!courses || courses.length === 0) {
+      console.log(`[BULMS] 0 courses found on dashboard. Trying Moodle 4.x /my/courses.php ...`);
+      await page.goto(`${BULMS_URL}/my/courses.php`, { waitUntil: "networkidle2", timeout: SCRAPE_TIMEOUT });
+      
+      await new Promise(res => setTimeout(res, 3000));
+      await waitForAny(page, [
+        ".dashboard-card",
+        ".course-card",
+        ".coursename",
+        "a[href*='course/view.php?id=']"
+      ], 10_000);
+      await new Promise(res => setTimeout(res, 2000));
+
+      try {
+        courses = await page.evaluate(evaluateLogic, BULMS_URL);
+      } catch (evalErr) {
+        if (evalErr.message.includes("Execution context was destroyed")) {
+          await new Promise(res => setTimeout(res, 3000));
+          courses = await page.evaluate(evaluateLogic, BULMS_URL);
+        } else {
+          throw evalErr;
+        }
       }
     }
 
