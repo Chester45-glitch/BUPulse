@@ -1,66 +1,63 @@
 # ─────────────────────────────────────────────────────────────────
-# BUPulse Backend — Dockerfile for Render (Puppeteer + Chrome)
+# BUPulse Backend — Dockerfile for Render
+# Fixed: let Puppeteer download its own Chrome (no manual wget)
 # ─────────────────────────────────────────────────────────────────
 FROM node:20-bookworm-slim
 
-# ── Install Chrome + all Puppeteer system dependencies ───────────
-RUN apt-get update && apt-get install -y \
-    wget \
-    curl \
-    gnupg \
+# ── Install ONLY the system libraries Chrome needs to run ─────────
+# We do NOT download Chrome here — Puppeteer's npm install does it.
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    wget \
     xvfb \
-    # Chrome deps
-    libglib2.0-0 \
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libdbus-1-3 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libpango-1.0-0 \
-    libcairo2 \
+    fonts-liberation \
     libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcairo2 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libexpat1 \
+    libfontconfig1 \
+    libgbm1 \
+    libglib2.0-0 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
+    libpango-1.0-0 \
     libx11-6 \
     libx11-xcb1 \
     libxcb1 \
+    libxcomposite1 \
+    libxdamage1 \
     libxext6 \
-    fonts-liberation \
-    # Cleanup
-    && rm -rf /var/lib/apt/lists/*
-
-# ── Install Google Chrome Stable ─────────────────────────────────
-RUN wget -q -O /tmp/google-chrome.deb \
-    https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-    && apt-get install -y /tmp/google-chrome.deb \
-    && rm /tmp/google-chrome.deb \
+    libxfixes3 \
+    libxrandr2 \
+    libxrender1 \
+    libxss1 \
+    libxtst6 \
     && rm -rf /var/lib/apt/lists/*
 
 # ── App setup ────────────────────────────────────────────────────
 WORKDIR /app
 
-# Tell Puppeteer to use the system Chrome we just installed
-# and skip downloading its own bundled Chromium
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
-ENV BULMS_HEADLESS=true
+# Allow Puppeteer to download its own bundled Chrome during npm install.
+# Do NOT set PUPPETEER_SKIP_CHROMIUM_DOWNLOAD or PUPPETEER_EXECUTABLE_PATH —
+# Puppeteer will find its own Chrome automatically.
+ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
 ENV NODE_ENV=production
+ENV BULMS_HEADLESS=true
 
-# Copy package files and install dependencies
+# Copy package files first (layer caching — Chrome only re-downloads
+# when package.json changes)
 COPY package*.json ./
+
+# npm ci triggers Puppeteer's postinstall which downloads Chrome (~170 MB)
 RUN npm ci --omit=dev
 
-# Copy source
+# Copy the rest of the source
 COPY . .
 
-# ── Start ────────────────────────────────────────────────────────
-# xvfb-run gives Puppeteer a virtual display (needed even in
-# headless mode for some Chrome flags on certain distros)
+# ── Start with a virtual display (xvfb) ─────────────────────────
 CMD ["sh", "-c", "xvfb-run -a --server-args='-screen 0 1280x800x24' node server.js"]
