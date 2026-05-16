@@ -200,13 +200,159 @@ const triggerInstantAnnouncementCheck = async (userId) => {
 };
 
 // ── Cron schedule ─────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// BULMS AUTO-SYNC (runs every 8 hours)
+// ══════════════════════════════════════════════════════════════════
+const syncBulmsForAllUsers = async () => {
+  console.log("[BULMS] Starting scheduled sync for all linked accounts…");
+
+  const { data: sessions } = await supabase
+    .from("bulms_sessions")
+    .select("user_id")
+    .eq("status", "active");
+
+  if (!sessions?.length) {
+    console.log("[BULMS] No active sessions to sync.");
+    return;
+  }
+
+  // Lazy-require to avoid circular deps at module load time
+  const { syncWithSavedSession } = require("./bulmsScraper");
+
+  let synced = 0;
+  let expired = 0;
+  let errors = 0;
+
+  for (const { user_id } of sessions) {
+    try {
+      const data = await syncWithSavedSession(user_id);
+
+      await supabase.from("bulms_data").upsert(
+        {
+          user_id,
+          subjects:   data.subjects,
+          activities: data.activities,
+          scraped_at: data.scrapedAt,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      );
+
+      await supabase
+        .from("bulms_sessions")
+        .update({ last_synced: new Date().toISOString(), sync_error: null })
+        .eq("user_id", user_id);
+
+      synced++;
+    } catch (err) {
+      if (err.message === "SESSION_EXPIRED") {
+        expired++;
+        console.warn(`[BULMS] Session expired for user ${user_id}`);
+      } else {
+        errors++;
+        console.error(`[BULMS] Sync error for user ${user_id}:`, err.message);
+        await supabase
+          .from("bulms_sessions")
+          .update({ sync_error: err.message, updated_at: new Date().toISOString() })
+          .eq("user_id", user_id)
+          .catch(() => {});
+      }
+    }
+  }
+
+  console.log(`[BULMS] Sync complete — ✓ ${synced} synced, ⚠ ${expired} expired, ✗ ${errors} errors.`);
+};
+
+
+// ══════════════════════════════════════════════════════════════════
+// HOURLY DUE-ACTIVITY REMINDERS
+// Sends notifications for activities due within 24h that aren't submitted.
+// Stops when: activity submitted, due date passes, or already notified < 55min ago.
+// ══════════════════════════════════════════════════════════════════
+const sendDueActivityReminders = async () => {
+  const now     = new Date();
+  const in24h   = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+  const { data: users } = await supabase
+    .from("users")
+    .select("id, email, name, access_token, refresh_token, role, notifications_enabled")
+    .eq("role", "student")
+    .eq("notifications_enabled", true)
+    .not("access_token", "is", null);
+
+  if (!users?.length) return;
+
+  const { getAllDeadlines } = require("./googleClassroom");
+  const { sendEmail }       = require("./gmail");
+  let reminded = 0;
+
+  for (const user of users) {
+    try {
+      const deadlines = await getAllDeadlines(user.access_token, user.refresh_token).catch(() => []);
+      const dueWithin24 = deadlines.filter(d => {
+        if (!d.dueDate) return false;
+        const due = new Date(d.dueDate);
+        return due > now && due <= in24h;
+      });
+
+      if (!dueWithin24.length) continue;
+
+      // Check which ones we haven't notified in the last 55 min
+      const { data: recentLogs } = await supabase
+        .from("notification_logs")
+        .select("payload")
+        .eq("user_id", user.id)
+        .eq("type", "due_reminder")
+        .gte("created_at", new Date(now.getTime() - 55 * 60 * 1000).toISOString());
+
+      const recentlyNotified = new Set(
+        (recentLogs || []).map(l => {
+          try { return JSON.parse(l.payload).activityId; } catch { return null; }
+        }).filter(Boolean)
+      );
+
+      const toRemind = dueWithin24.filter(d => !recentlyNotified.has(d.courseWorkId));
+      if (!toRemind.length) continue;
+
+      const hoursStr = toRemind.map(d => {
+        const h = Math.ceil((new Date(d.dueDate) - now) / 3600000);
+        return `• ${d.title} (${d.courseName}) — due in ${h}h`;
+      }).join("\n");
+
+      await sendEmail({
+        to:      user.email,
+        subject: `⏰ ${toRemind.length} activit${toRemind.length===1?"y":"ies"} due within 24 hours`,
+        html: `<p>Hi ${user.name?.split(" ")[0] || "there"},</p>
+<p>You have activities due very soon:</p>
+<pre style="font-family:monospace;background:#f5f5f5;padding:12px;border-radius:8px">${hoursStr}</pre>
+<p>Log in to <a href="${process.env.FRONTEND_URL}">BUPulse</a> to submit on time.</p>`,
+      });
+
+      // Log each reminder so we don't re-send within 55 min
+      const logRows = toRemind.map(d => ({
+        user_id:  user.id,
+        type:     "due_reminder",
+        payload:  JSON.stringify({ activityId: d.courseWorkId, title: d.title }),
+      }));
+      await supabase.from("notification_logs").insert(logRows).catch(() => {});
+      reminded++;
+    } catch (err) {
+      console.error(`[DueReminder] Error for ${user.email}:`, err.message);
+    }
+  }
+  if (reminded > 0) console.log(`[DueReminder] Sent to ${reminded} student(s).`);
+};
+
 const startScheduler = () => {
   // Deadlines: 7AM and 5PM (existing)
   cron.schedule("0 7 * * *",  checkAll, { timezone: "Asia/Manila" });
   cron.schedule("0 17 * * *", checkAll, { timezone: "Asia/Manila" });
 
-  // Announcements for non-instant users: every 30 minutes
-  cron.schedule("*/30 * * * *", async () => {
+  // BULMS auto-sync: every 8 hours (1AM, 9AM, 5PM)
+  cron.schedule("0 1,9,17 * * *", syncBulmsForAllUsers, { timezone: "Asia/Manila" });
+
+  // Announcements — every 5 minutes (down from 30min for near-realtime delivery)
+  cron.schedule("*/5 * * * *", async () => {
     const { data: users } = await supabase
       .from("users")
       .select("id, email, name, access_token, refresh_token, notifications_enabled, notify_instant")
@@ -221,7 +367,12 @@ const startScheduler = () => {
     }
   }, { timezone: "Asia/Manila" });
 
-  console.log("📅 Scheduler started: deadlines at 7AM/5PM, announcements every 30 min (Asia/Manila)");
+  // Hourly due-activity reminder: notify students of activities due within 24h not yet submitted
+  cron.schedule("0 * * * *", async () => {
+    await sendDueActivityReminders();
+  }, { timezone: "Asia/Manila" });
+
+  console.log("📅 Scheduler started: deadlines 7AM/5PM, announcements every 5min, due reminders hourly, BULMS sync 1AM/9AM/5PM (Asia/Manila)");
 };
 
 // ══════════════════════════════════════════════════════════════════
