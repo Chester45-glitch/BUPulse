@@ -51,10 +51,12 @@ function decrypt(ciphertext) {
 // Converts "IT 203 - Networking 2" → "Networking 2"
 const cleanSubjectName = (name) => {
   if (!name) return name;
-  // Pattern: 2-4 uppercase letters + optional space + digits + optional letter + space + dash + space
-  // Examples: "CS 104B - ", "IT 203 - ", "ENG101 - ", "MATH 1A - "
-  const cleaned = name.replace(/^[A-Z]{2,6}\s?\d+[A-Z]?\s*[-–—]\s*/i, "").trim();
-  return cleaned || name; // fallback to original if result is empty
+  let s = name.trim();
+  // 1. Strip BULMS literal prefixes: "Course name ", "Course starred " etc.
+  s = s.replace(/^Course\s+(name|starred|pinned|archived|active)?\s*/i, "").trim();
+  // 2. Strip course code prefixes: "CS 104B - ", "IT 203 - ", "CS-IT-IS_106 - "
+  s = s.replace(/^[A-Z]{2,}[\s\-_]*[A-Z0-9]*[\s\-_]*\d+[A-Z0-9]*[\s\-_]*[-\u2013\u2014]+\s*/i, "").trim();
+  return s || name.trim();
 };
 
 // ── Launch browser for manual user login ─────────────────────────
