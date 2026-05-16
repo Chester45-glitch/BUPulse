@@ -24,6 +24,10 @@ export default function ParentDashboard() {
   const [linkSuccess, setLinkSuccess] = useState("");
   const [activeTab, setActiveTab] = useState("deadlines");
   const [dataError, setDataError] = useState("");
+  const [annCourseFilter, setAnnCourseFilter] = useState("all");
+  const [attendance, setAttendance] = useState([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceFilter, setAttendanceFilter] = useState("all");
 
   const loadStudents = async () => {
     setLoadingStudents(true);
@@ -54,6 +58,16 @@ export default function ParentDashboard() {
       .then(r => setStudentData(r.data))
       .catch(err => setDataError(err.response?.data?.error || "Failed to load student data"))
       .finally(() => setLoadingData(false));
+
+    // Load attendance for this student
+    setAttendanceLoading(true);
+    setAttendance([]);
+    setAttendanceFilter("all");
+    setAnnCourseFilter("all");
+    api.get(`/parent/student/${selectedStudent.id}/attendance`)
+      .then(r => setAttendance(r.data.records || []))
+      .catch(() => setAttendance([]))
+      .finally(() => setAttendanceLoading(false));
   }, [selectedStudent]);
 
   const handleLink = async (e) => {
@@ -345,6 +359,114 @@ export default function ParentDashboard() {
                     );
                   })()}
 
+                  {/* Attendance tab */}
+                  {activeTab === "attendance" && (() => {
+                    const statusCfg = {
+                      present: { bg:"#dcfce7", color:"#16a34a", label:"Present" },
+                      absent:  { bg:"#fee2e2", color:"#dc2626", label:"Absent"  },
+                      late:    { bg:"#fef9c3", color:"#ca8a04", label:"Late"    },
+                    };
+                    const uniqueClasses = [...new Set(attendance.map(r => r.class_id))];
+                    const filtered = attendanceFilter === "all"
+                      ? attendance
+                      : attendance.filter(r => r.class_id === attendanceFilter);
+                    const fmtDate = d => !d ? "" : new Date(d).toLocaleDateString("en-PH",{weekday:"short",month:"short",day:"numeric",year:"numeric"});
+
+                    return (
+                      <div>
+                        {attendanceLoading ? (
+                          <div style={{ textAlign:"center", padding:32, color:"var(--text-muted)" }}>
+                            <div style={{ width:28,height:28,border:"3px solid var(--border-color)",borderTopColor:"#16a34a",borderRadius:"50%",animation:"spin 0.8s linear infinite",margin:"0 auto 12px" }}/>
+                            Loading attendance…
+                          </div>
+                        ) : attendance.length === 0 ? (
+                          <div style={{ textAlign:"center", padding:36, color:"var(--text-muted)" }}>
+                            <div style={{ fontSize:36, marginBottom:10 }}>📋</div>
+                            <p style={{ fontSize:14, fontWeight:600, marginBottom:6 }}>No attendance records found</p>
+                            <p style={{ fontSize:12 }}>Attendance will appear here once the student's classes post records.</p>
+                          </div>
+                        ) : (
+                          <>
+                            {/* Summary */}
+                            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
+                              {["present","absent","late"].map(s => {
+                                const count = filtered.reduce((acc,r)=>acc+(r.names||[]).filter(n=>n.status===s).length,0);
+                                const cfg = statusCfg[s];
+                                return (
+                                  <div key={s} style={{ background:cfg.bg, borderRadius:10, padding:"10px 14px", textAlign:"center" }}>
+                                    <div style={{ fontSize:22, fontWeight:700, color:cfg.color }}>{count}</div>
+                                    <div style={{ fontSize:11, color:cfg.color, fontWeight:600 }}>{cfg.label}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Class filter pills */}
+                            {uniqueClasses.length > 1 && (
+                              <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
+                                {["all", ...uniqueClasses].map(id => {
+                                  const name = id==="all" ? "All Classes" : attendance.find(r=>r.class_id===id)?.class_name||id;
+                                  const active = attendanceFilter === id;
+                                  return (
+                                    <button key={id} onClick={()=>setAttendanceFilter(id)}
+                                      style={{ padding:"4px 12px", borderRadius:99, fontSize:11.5, fontWeight:active?700:400,
+                                        border:`1.5px solid ${active?"#3730a3":"var(--border-color)"}`,
+                                        background:active?"rgba(55,48,163,0.1)":"transparent",
+                                        color:active?"#3730a3":"var(--text-muted)", cursor:"pointer" }}>
+                                      {name.length>22 ? name.slice(0,21)+"…" : name}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Records */}
+                            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                              {filtered.map((record, i) => {
+                                const isVerified = record.is_verified===true;
+                                const present = (record.names||[]).filter(n=>n.status==="present").length;
+                                const absent  = (record.names||[]).filter(n=>n.status==="absent").length;
+                                const late    = (record.names||[]).filter(n=>n.status==="late").length;
+                                return (
+                                  <div key={record.id||i} style={{ background:"var(--card-bg)", borderRadius:12,
+                                    border:`1.5px solid ${isVerified?"rgba(22,163,74,0.35)":"var(--card-border)"}`,
+                                    overflow:"hidden" }}>
+                                    {isVerified && (
+                                      <div style={{ background:"rgba(22,163,74,0.08)", padding:"5px 14px", fontSize:11.5, color:"#16a34a", fontWeight:700, display:"flex", alignItems:"center", gap:6, borderBottom:"1px solid rgba(22,163,74,0.2)" }}>
+                                        ✅ Verified {record.verifier?.name ? `by ${record.verifier.name}` : ""}
+                                      </div>
+                                    )}
+                                    <div style={{ padding:"12px 14px" }}>
+                                      <div style={{ display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:6, marginBottom:8 }}>
+                                        <div>
+                                          <div style={{ fontSize:14, fontWeight:700, color:"var(--text-primary)" }}>{record.class_name}</div>
+                                          <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:2 }}>
+                                            {fmtDate(record.record_date)}
+                                            {record.session_label ? ` · ${record.session_label}` : ""}
+                                          </div>
+                                        </div>
+                                        <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"flex-start" }}>
+                                          {present>0 && <span style={{ padding:"2px 8px", borderRadius:99, background:"#dcfce7", color:"#16a34a", fontSize:11, fontWeight:700 }}>{present} Present</span>}
+                                          {absent>0  && <span style={{ padding:"2px 8px", borderRadius:99, background:"#fee2e2", color:"#dc2626", fontSize:11, fontWeight:700 }}>{absent} Absent</span>}
+                                          {late>0    && <span style={{ padding:"2px 8px", borderRadius:99, background:"#fef9c3", color:"#ca8a04", fontSize:11, fontWeight:700 }}>{late} Late</span>}
+                                        </div>
+                                      </div>
+                                      {record.poster && (
+                                        <div style={{ fontSize:11.5, color:"var(--text-faint)" }}>
+                                          Posted by {record.poster.name||"Unknown"}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* Courses tab */}
                   {activeTab === "courses" && (
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }} className="parent-courses">
@@ -368,6 +490,7 @@ export default function ParentDashboard() {
 
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         @media (max-width: 640px) { .parent-courses { grid-template-columns: 1fr !important; } }
       `}</style>
