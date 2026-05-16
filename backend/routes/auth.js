@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { google } = require("googleapis");
 const jwt = require("jsonwebtoken");
+const { syncUserCourses } = require("../services/userCourseSync");
 const supabase = require("../db/supabase");
 const { getTaughtCourses } = require("../services/googleClassroom");
 const { authenticateToken } = require("../middleware/auth");
@@ -99,6 +100,11 @@ router.get("/google/callback", async (req, res) => {
         : `${process.env.FRONTEND_URL}/?error=account_deleted`;
       return res.redirect(errUrl);
     }
+
+    // Sync Google Classroom memberships into user_courses table.
+    // Fire-and-forget — don't block the login redirect.
+    syncUserCourses(user.id, tokens.access_token, tokens.refresh_token, role)
+      .catch(e => console.error("[auth] course sync error:", e.message));
 
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },

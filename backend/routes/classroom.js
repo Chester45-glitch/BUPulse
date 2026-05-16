@@ -1,6 +1,7 @@
 const express = require("express");
 const supabase = require("../db/supabase");
 const { authenticateToken } = require("../middleware/auth");
+const { syncUserCourses } = require("../services/userCourseSync");
 const {
   getCourses,
   getAllDeadlines,
@@ -49,6 +50,18 @@ router.get("/courses", authenticateToken, async (req, res) => {
     const tokens = await getUserTokens(req.user.id);
     const courses = await getCourses(tokens.access_token, tokens.refresh_token);
     setCache(cacheKey, courses);
+
+    // Sync into user_courses table (fire-and-forget)
+    syncUserCourses(req.user.id, tokens.access_token, tokens.refresh_token, "student")
+      .catch(e => console.error("[classroom] course sync:", e.message));
+
+    // Update cached_course_ids in users table for resilient attendance visibility
+    const courseIds = courses.map(c => c.id);
+    supabase.from("users").update({
+      cached_course_ids: courseIds,
+      courses_cached_at: new Date().toISOString(),
+    }).eq("id", req.user.id).then(() => {}).catch(() => {});
+
     res.json({ courses });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch courses" });
