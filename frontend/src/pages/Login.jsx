@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 
 const StudentIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -189,9 +190,16 @@ export default function Login() {
           </button>
 
           {/* Security note */}
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 7, background: "rgba(22,163,74,0.06)", border: "1px solid rgba(22,163,74,0.2)", borderRadius: 10, padding: "11px 14px", color: "rgba(22,163,74,0.85)", fontSize: 12.5, lineHeight: 1.55 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 7, background: "rgba(22,163,74,0.06)", border: "1px solid rgba(22,163,74,0.2)", borderRadius: 10, padding: "11px 14px", color: "rgba(22,163,74,0.85)", fontSize: 12.5, lineHeight: 1.55, marginBottom: 24 }}>
             <svg style={{ flexShrink: 0, marginTop: 1 }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             Sign in with the Google account you use for your enrolled classes. No password required.
+          </div>
+
+          {/* Legal links */}
+          <div style={{ display: "flex", justifyContent: "center", gap: 16, fontSize: 12, color: "var(--text-muted)" }}>
+            <Link to="/privacy-policy" style={{ color: "var(--text-muted)", textDecoration: "none" }} onMouseEnter={e => e.currentTarget.style.color = "#16a34a"} onMouseLeave={e => e.currentTarget.style.color = "var(--text-muted)"}>Privacy Policy</Link>
+            <span>•</span>
+            <Link to="/terms-of-service" style={{ color: "var(--text-muted)", textDecoration: "none" }} onMouseEnter={e => e.currentTarget.style.color = "#16a34a"} onMouseLeave={e => e.currentTarget.style.color = "var(--text-muted)"}>Terms of Service</Link>
           </div>
         </div>
       </div>
