@@ -13,6 +13,8 @@ import ParentDashboard from "./pages/ParentDashboard";
 import Schedule from "./pages/Schedule";
 import Attendance from "./pages/Attendance";
 import BulmsSync from "./pages/BulmsSync";   // ← NEW
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsOfService from "./pages/TermsOfService";
 import Layout from "./components/Layout";
 
 const Spinner = () => (
@@ -53,6 +55,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={user ? <RoleRedirect /> : <Login />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+        <Route path="/terms-of-service" element={<TermsOfService />} />
 
         {/* ── Student routes ─────────────────────────────────────── */}
         <Route path="/" element={<PrivateRoute allowedRoles={["student"]}><Layout /></PrivateRoute>}>
