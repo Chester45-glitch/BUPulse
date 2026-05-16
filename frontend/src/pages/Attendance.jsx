@@ -1,130 +1,206 @@
-import { useState, useEffect, useRef } from "react";
+/**
+ * Attendance.jsx — Definitive shared class attendance board
+ *
+ * VISIBILITY: calls /sync-courses on mount so user_courses is always
+ *   populated before the attendance query runs.
+ *
+ * REALTIME: SSE connection broadcasts INSERT/UPDATE/DELETE to all
+ *   members of the same class instantly.
+ *
+ * PERMISSIONS (mirrors backend exactly):
+ *   Professor   → create, edit any, delete any, verify
+ *   Student     → create, edit own unverified, delete own unverified
+ *   Verified    → students cannot edit or delete; only professor can
+ */
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import api from "../utils/api";
 
-const IcoPlus   = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
-const IcoUpload = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>;
-const IcoTrash  = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>;
-const IcoCheck  = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
-const IcoUsers  = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
-const IcoEdit   = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
-
-const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-PH",{weekday:"short",month:"short",day:"numeric",year:"numeric"}) : "";
-const statusColors = {
-  draft:     {bg:"#fff7ed",color:"#d97706",label:"Draft"},
-  submitted: {bg:"#eff6ff",color:"#2563eb",label:"Submitted"},
-  verified:  {bg:"#f0fdf4",color:"#16a34a",label:"Verified"},
+// ── Icon helper ───────────────────────────────────────────────────
+const Ico = ({ d, size = 18, sw = 1.8, stroke = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
+    <path d={d} />
+  </svg>
+);
+const D = {
+  plus:    "M12 5v14M5 12h14",
+  upload:  "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12",
+  trash:   "M3 6h18M8 6V4h8v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6",
+  edit:    "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z",
+  checkC:  "M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3",
+  x:       "M18 6L6 18M6 6l12 12",
+  refresh: "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15",
+  shield:  "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+  lock:    "M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2zM7 11V7a5 5 0 0 1 10 0v4",
+  warn:    "M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01",
+  info:    "M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zM12 8h.01M12 12v4",
 };
 
-// ── New Record Modal ──────────────────────────────────────────────
-function NewRecordModal({ courses, onSave, onClose }) {
-  const [course, setCourse]       = useState(courses?.[0]?.name || "");
-  const [courseId, setCourseId]   = useState(courses?.[0]?.id || "");
-  const [date, setDate]           = useState(new Date().toISOString().split("T")[0]);
-  const [names, setNames]         = useState([{ name:"", status:"present" }]);
-  const [uploading, setUploading] = useState(false);
-  const [extracting, setExtracting] = useState(false);
-  const [error, setError]         = useState("");
+// ── Constants ─────────────────────────────────────────────────────
+const PALETTE   = ["#2563eb","#16a34a","#7c3aed","#b45309","#0f766e","#be123c","#0284c7","#65a30d"];
+const clrCourse = name => PALETTE[(name?.charCodeAt(0)||0) % PALETTE.length];
+const statusCfg = {
+  present: { bg:"#dcfce7", color:"#16a34a", label:"Present" },
+  absent:  { bg:"#fee2e2", color:"#dc2626", label:"Absent"  },
+  late:    { bg:"#fef9c3", color:"#ca8a04", label:"Late"    },
+};
+const fmtDate = d => !d ? "" : new Date(d).toLocaleDateString("en-PH", { weekday:"short", month:"short", day:"numeric", year:"numeric" });
+const timeAgo = iso => {
+  if (!iso) return "";
+  const m = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (m < 1) return "Just now"; if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h/24)}d ago`;
+};
+
+const IN  = { width:"100%", padding:"9px 12px", border:"1.5px solid var(--card-border)", borderRadius:9, background:"var(--input-bg)", color:"var(--text-primary)", fontSize:14, outline:"none", boxSizing:"border-box" };
+const LBL = { fontSize:12, fontWeight:600, color:"var(--text-muted)", display:"block", marginBottom:5 };
+
+// ── Stat box ──────────────────────────────────────────────────────
+function StatBox({ label, value, color="#16a34a" }) {
+  return (
+    <div style={{ background:"var(--card-bg)", border:"1px solid var(--card-border)", borderRadius:12, padding:"14px 18px", textAlign:"center", boxShadow:"var(--shadow-sm)" }}>
+      <div style={{ fontSize:26, fontWeight:700, color }}>{value}</div>
+      <div style={{ fontSize:11.5, color:"var(--text-muted)", marginTop:2 }}>{label}</div>
+    </div>
+  );
+}
+
+// ── Delete confirmation modal ─────────────────────────────────────
+function DeleteModal({ record, loading, onConfirm, onCancel }) {
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20, backdropFilter:"blur(4px)" }}>
+      <div style={{ background:"var(--card-bg)", borderRadius:18, padding:"28px 28px 24px", width:"100%", maxWidth:420, boxShadow:"0 24px 60px rgba(0,0,0,0.25)", animation:"scaleIn 0.18s ease" }}>
+        <div style={{ width:52, height:52, borderRadius:14, background:"#fee2e2", display:"flex", alignItems:"center", justifyContent:"center", marginBottom:16 }}>
+          <Ico d={D.trash} size={22} stroke="#dc2626" />
+        </div>
+        <h3 style={{ fontSize:17, fontWeight:700, color:"var(--text-primary)", marginBottom:8 }}>Delete this record?</h3>
+        <p style={{ fontSize:13.5, color:"var(--text-muted)", lineHeight:1.6, marginBottom:16 }}>
+          Attendance for <strong style={{ color:"var(--text-primary)" }}>{record?.class_name}</strong> on{" "}
+          <strong style={{ color:"var(--text-primary)" }}>{fmtDate(record?.record_date)}</strong> will be permanently removed for <em>all class members</em>.
+        </p>
+        {record?.is_verified && (
+          <div style={{ background:"#fef9c3", border:"1px solid #fde047", borderRadius:9, padding:"8px 12px", fontSize:12.5, color:"#854d0e", marginBottom:16, display:"flex", alignItems:"center", gap:7 }}>
+            <Ico d={D.shield} size={14} stroke="#854d0e" /> Verified record — only professors can delete this.
+          </div>
+        )}
+        <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+          <button onClick={onCancel} style={{ padding:"9px 18px", borderRadius:9, border:"1px solid var(--card-border)", background:"transparent", color:"var(--text-muted)", fontSize:13.5, cursor:"pointer" }}>Cancel</button>
+          <button onClick={onConfirm} disabled={loading} style={{ padding:"9px 18px", borderRadius:9, border:"none", background:loading?"#9ca3af":"#dc2626", color:"#fff", fontSize:13.5, fontWeight:600, cursor:loading?"not-allowed":"pointer", display:"flex", alignItems:"center", gap:8 }}>
+            {loading && <div style={{ width:14,height:14,border:"2px solid rgba(255,255,255,0.4)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin 0.75s linear infinite" }}/>}
+            {loading ? "Deleting…" : "Delete permanently"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Create / Edit modal ───────────────────────────────────────────
+function RecordModal({ courses, existing, onSave, onClose }) {
+  const isEdit = !!existing;
+  const [classId,      setClassId]      = useState(existing?.class_id      || courses?.[0]?.id   || "");
+  const [className,    setClassName]    = useState(existing?.class_name    || courses?.[0]?.name || "");
+  const [date,         setDate]         = useState(existing?.record_date   || new Date().toISOString().split("T")[0]);
+  const [sessionLabel, setSessionLabel] = useState(existing?.session_label || "");
+  const [notes,        setNotes]        = useState(existing?.notes         || "");
+  const [names,        setNames]        = useState(existing?.names?.length ? existing.names : [{ name:"", status:"present" }]);
+  const [uploading,    setUploading]    = useState(false);
+  const [saving,       setSaving]       = useState(false);
+  const [error,        setError]        = useState("");
   const fileRef = useRef(null);
 
-  const addRow    = () => setNames(n=>[...n,{name:"",status:"present"}]);
-  const removeRow = (i) => setNames(n=>n.filter((_,j)=>j!==i));
-  const updateRow = (i,field,val) => setNames(n=>n.map((r,j)=>j===i?{...r,[field]:val}:r));
+  const addRow    = () => setNames(n => [...n, { name:"", status:"present" }]);
+  const removeRow = i  => setNames(n => n.filter((_,j) => j !== i));
+  const updRow    = (i,f,v) => setNames(n => n.map((r,j) => j===i ? {...r,[f]:v} : r));
 
-  const handleFile = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
-    setUploading(true); setError("");
+  const handleFile = async e => {
+    const file = e.target.files?.[0]; if (!file) return;
+    e.target.value = ""; setUploading(true); setError("");
     try {
-      const base64 = await new Promise((res,rej)=>{
-        const r=new FileReader();
-        r.onload=()=>res(r.result.split(",")[1]);
-        r.onerror=rej;
-        r.readAsDataURL(file);
-      });
-      setExtracting(true);
-
-      // Send fileData for images so Gemini can read them visually
-      const payload = file.type.startsWith("image/")
-        ? { fileData: base64, fileType: file.type }
-        : { text: `Attendance sheet: ${file.name}` };
-
+      const base64 = await new Promise((res,rej) => { const r=new FileReader(); r.onload=()=>res(r.result.split(",")[1]); r.onerror=rej; r.readAsDataURL(file); });
+      const payload = file.type.startsWith("image/") ? { fileData:base64, fileType:file.type } : { text:`Attendance sheet: ${file.name}` };
       const res = await api.post("/attendance/extract", payload);
       const extracted = res.data.names || [];
-      if (extracted.length > 0) setNames(extracted);
-      else setError("No names found. Please add manually.");
-    } catch(err) { setError(err.response?.data?.error || "Failed to extract names"); }
-    finally { setUploading(false); setExtracting(false); }
+      if (extracted.length) setNames(extracted); else setError("No names found — add manually.");
+    } catch (err) { setError(err.response?.data?.error || "Failed to extract names"); }
+    finally { setUploading(false); }
   };
 
-  const validNames = names.filter(n=>n.name.trim());
+  const handleSave = async () => {
+    if (!classId) { setError("Select a class"); return; }
+    if (!date)    { setError("Select a date");  return; }
+    const valid = names.filter(n => n.name.trim());
+    setSaving(true); setError("");
+    try {
+      if (isEdit) {
+        const r = await api.patch(`/attendance/class/${existing.id}`, { names:valid, session_label:sessionLabel, notes, record_date:date });
+        onSave(r.data.record);
+      } else {
+        const r = await api.post("/attendance/class", { classId, className, recordDate:date, names:valid, sessionLabel, notes });
+        onSave(r.data.record);
+      }
+    } catch (err) { setError(err.response?.data?.error || "Save failed"); setSaving(false); }
+  };
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto"}}>
-      <div style={{background:"var(--card-bg)",borderRadius:18,padding:24,width:"100%",maxWidth:520,boxShadow:"var(--shadow-xl)"}}>
-        <h3 style={{fontSize:16,fontWeight:700,color:"var(--text-primary)",marginBottom:20}}>New Attendance Record</h3>
-        <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:20}}>
-          {courses?.length > 0 ? (
-            <div>
-              <label style={{fontSize:12,fontWeight:600,color:"var(--text-muted)",display:"block",marginBottom:5}}>Class *</label>
-              <select value={courseId} onChange={e=>{setCourseId(e.target.value);setCourse(courses.find(c=>c.id===e.target.value)?.name||e.target.value);}}
-                style={{width:"100%",padding:"9px 12px",border:"1.5px solid var(--card-border)",borderRadius:9,background:"var(--input-bg)",color:"var(--text-primary)",fontSize:14,outline:"none"}}>
-                {courses.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-          ) : (
-            <div>
-              <label style={{fontSize:12,fontWeight:600,color:"var(--text-muted)",display:"block",marginBottom:5}}>Class name *</label>
-              <input value={course} onChange={e=>setCourse(e.target.value)}
-                style={{width:"100%",padding:"9px 12px",border:"1.5px solid var(--card-border)",borderRadius:9,background:"var(--input-bg)",color:"var(--text-primary)",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
-            </div>
-          )}
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:16, overflowY:"auto" }}>
+      <div style={{ background:"var(--card-bg)", borderRadius:18, padding:24, width:"100%", maxWidth:540, boxShadow:"var(--shadow-xl)", animation:"scaleIn 0.18s ease", margin:"auto" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
+          <h3 style={{ fontSize:16, fontWeight:700, color:"var(--text-primary)" }}>{isEdit?"Edit":"New"} Attendance Record</h3>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"var(--text-muted)", cursor:"pointer", padding:4 }}><Ico d={D.x} size={20}/></button>
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:13, marginBottom:16 }}>
           <div>
-            <label style={{fontSize:12,fontWeight:600,color:"var(--text-muted)",display:"block",marginBottom:5}}>Date *</label>
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)}
-              style={{width:"100%",padding:"9px 12px",border:"1.5px solid var(--card-border)",borderRadius:9,background:"var(--input-bg)",color:"var(--text-primary)",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+            <label style={LBL}>Class *</label>
+            {courses?.length > 0 ? (
+              <select value={classId} onChange={e => { setClassId(e.target.value); setClassName(courses.find(c=>c.id===e.target.value)?.name||e.target.value); }} style={IN}>
+                {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            ) : (
+              <input value={className} onChange={e=>setClassName(e.target.value)} style={IN} placeholder="Class name"/>
+            )}
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+            <div><label style={LBL}>Date *</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={IN}/></div>
+            <div><label style={LBL}>Session</label><input value={sessionLabel} onChange={e=>setSessionLabel(e.target.value)} placeholder="e.g. Morning / Lab" style={IN}/></div>
+          </div>
+          <div><label style={LBL}>Notes</label><input value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Optional notes" style={IN}/></div>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+          <span style={{ fontSize:13, fontWeight:600, color:"var(--text-primary)" }}>Students ({names.filter(n=>n.name.trim()).length})</span>
+          <div style={{ display:"flex", gap:8 }}>
+            <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={handleFile} style={{ display:"none" }}/>
+            <button onClick={()=>fileRef.current?.click()} disabled={uploading} style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 10px", borderRadius:7, border:"1px solid var(--card-border)", background:"transparent", color:"var(--text-muted)", fontSize:12, cursor:"pointer" }}>
+              <Ico d={D.upload} size={13}/>{uploading?" Reading…":" Import file"}
+            </button>
+            <button onClick={addRow} style={{ display:"flex", alignItems:"center", gap:4, padding:"5px 10px", borderRadius:7, border:"none", background:"#16a34a", color:"#fff", fontSize:12, cursor:"pointer" }}>
+              <Ico d={D.plus} size={13}/> Add
+            </button>
           </div>
         </div>
-
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-          <div style={{fontSize:13,fontWeight:600,color:"var(--text-primary)"}}>Students ({validNames.length})</div>
-          <div style={{display:"flex",gap:8}}>
-            <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={handleFile} style={{display:"none"}}/>
-            <button onClick={()=>fileRef.current?.click()} disabled={uploading||extracting}
-              style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:7,border:"1px solid var(--card-border)",background:"transparent",color:"var(--text-muted)",fontSize:12,cursor:"pointer"}}>
-              <IcoUpload/> {uploading?"Uploading…":extracting?"Reading…":"Import from file"}
-            </button>
-            <button onClick={addRow} style={{display:"flex",alignItems:"center",gap:4,padding:"5px 10px",borderRadius:7,border:"none",background:"var(--green-700)",color:"#fff",fontSize:12,cursor:"pointer"}}>
-              <IcoPlus/> Add
-            </button>
-          </div>
-        </div>
-
-        {error && <div style={{color:"#dc2626",fontSize:12.5,marginBottom:10}}>{error}</div>}
-
-        <div style={{maxHeight:280,overflowY:"auto",display:"flex",flexDirection:"column",gap:6}}>
-          {names.map((row,i)=>(
-            <div key={i} style={{display:"flex",gap:8,alignItems:"center"}}>
-              <input value={row.name} onChange={e=>updateRow(i,"name",e.target.value)} placeholder={`Student ${i+1}`}
-                style={{flex:1,padding:"7px 10px",border:"1px solid var(--card-border)",borderRadius:7,background:"var(--input-bg)",color:"var(--text-primary)",fontSize:13,outline:"none"}}/>
-              <select value={row.status} onChange={e=>updateRow(i,"status",e.target.value)}
-                style={{padding:"7px 8px",border:"1px solid var(--card-border)",borderRadius:7,background:"var(--input-bg)",color:row.status==="present"?"#16a34a":"#dc2626",fontSize:12,outline:"none"}}>
+        {error && <div style={{ color:"#dc2626", fontSize:12.5, marginBottom:8 }}>{error}</div>}
+        <div style={{ maxHeight:240, overflowY:"auto", display:"flex", flexDirection:"column", gap:5, marginBottom:18 }}>
+          {names.map((row,i) => (
+            <div key={i} style={{ display:"flex", gap:8, alignItems:"center" }}>
+              <input value={row.name} onChange={e=>updRow(i,"name",e.target.value)} placeholder={`Student ${i+1}`}
+                style={{ flex:1, padding:"7px 10px", border:"1px solid var(--card-border)", borderRadius:7, background:"var(--input-bg)", color:"var(--text-primary)", fontSize:13, outline:"none" }}/>
+              <select value={row.status} onChange={e=>updRow(i,"status",e.target.value)}
+                style={{ padding:"7px 8px", border:"1px solid var(--card-border)", borderRadius:7, background:"var(--input-bg)", color:statusCfg[row.status]?.color||"inherit", fontSize:12, outline:"none", fontWeight:600 }}>
                 <option value="present">Present</option>
                 <option value="absent">Absent</option>
                 <option value="late">Late</option>
               </select>
-              <button onClick={()=>removeRow(i)} style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer"}}><IcoTrash/></button>
+              <button onClick={()=>removeRow(i)} style={{ background:"none", border:"none", color:"#dc2626", cursor:"pointer", padding:4 }}><Ico d={D.x} size={14}/></button>
             </div>
           ))}
         </div>
-
-        <div style={{display:"flex",gap:10,marginTop:20,justifyContent:"flex-end"}}>
-          <button onClick={onClose} style={{padding:"9px 18px",borderRadius:9,border:"1px solid var(--card-border)",background:"transparent",color:"var(--text-muted)",fontSize:13.5,cursor:"pointer"}}>Cancel</button>
-          <button onClick={()=>onSave({course_name:course||courseId,course_id:courseId||null,record_date:date,names:validNames,source:"manual"})}
-            disabled={!course||!date||validNames.length===0}
-            style={{padding:"9px 18px",borderRadius:9,border:"none",background:"var(--green-700)",color:"#fff",fontSize:13.5,fontWeight:600,cursor:"pointer"}}>
-            Save attendance
+        <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+          <button onClick={onClose} style={{ padding:"9px 18px", borderRadius:10, border:"1px solid var(--card-border)", background:"transparent", color:"var(--text-secondary)", fontWeight:600, fontSize:14, cursor:"pointer" }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} style={{ padding:"9px 22px", borderRadius:10, border:"none", background:saving?"#9ca3af":"#16a34a", color:"#fff", fontWeight:600, fontSize:14, cursor:saving?"not-allowed":"pointer", display:"flex", alignItems:"center", gap:8 }}>
+            {saving && <div style={{ width:14,height:14,border:"2px solid rgba(255,255,255,0.4)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin 0.75s linear infinite" }}/>}
+            {saving ? "Saving…" : isEdit ? "Save Changes" : "Post Attendance"}
           </button>
         </div>
       </div>
@@ -132,349 +208,372 @@ function NewRecordModal({ courses, onSave, onClose }) {
   );
 }
 
-// ── Record Detail Modal (with edit for professor) ─────────────────
-function RecordDetail({ record, isProfessor, onVerify, onSave, onClose }) {
-  const [editing, setEditing]     = useState(false);
-  const [names, setNames]         = useState(record.names || []);
-  const [saving, setSaving]       = useState(false);
+// ── Attendance record card ────────────────────────────────────────
+function AttendanceCard({ record, currentUser, onEdit, onDelete, onVerify, index }) {
+  const [expanded, setExpanded] = useState(false);
 
-  const present = names.filter(n=>n.status==="present").length;
-  const absent  = names.filter(n=>n.status==="absent").length;
-  const late    = names.filter(n=>n.status==="late").length;
-  const cfg     = statusColors[record.status] || statusColors.draft;
+  const isProfessor  = currentUser?.role === "professor";
+  const isOwnRecord  = record.posted_by === currentUser?.id;
+  const isVerified   = record.is_verified === true;
 
-  const handleSave = async () => {
-    setSaving(true);
-    await onSave(record.id, names);
-    setEditing(false);
-    setSaving(false);
-  };
+  // Mirrors backend permission matrix exactly
+  const canEdit   = isProfessor || (isOwnRecord && !isVerified);
+  const canDelete = isProfessor || (isOwnRecord && !isVerified);
+  const canVerify = isProfessor && !isVerified;
+
+  const present = (record.names||[]).filter(n=>n.status==="present").length;
+  const absent  = (record.names||[]).filter(n=>n.status==="absent").length;
+  const late    = (record.names||[]).filter(n=>n.status==="late").length;
+  const total   = (record.names||[]).length;
+  const color   = clrCourse(record.class_name);
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
-      <div style={{background:"var(--card-bg)",borderRadius:18,padding:24,width:"100%",maxWidth:500,boxShadow:"var(--shadow-xl)",maxHeight:"85vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
-          <div>
-            <h3 style={{fontSize:16,fontWeight:700,color:"var(--text-primary)",margin:0}}>{record.course_name}</h3>
-            <p style={{fontSize:13,color:"var(--text-muted)",margin:"4px 0 0"}}>{fmtDate(record.record_date)}</p>
-            {record.user && <p style={{fontSize:12,color:"var(--text-muted)",margin:"2px 0 0"}}>👤 {record.user.name || record.user.email}</p>}
+    <div style={{
+      background:"var(--card-bg)", borderRadius:16, overflow:"hidden",
+      border: isVerified ? "1.5px solid rgba(22,163,74,0.45)" : "1px solid var(--card-border)",
+      boxShadow:"var(--shadow-sm)", animation:`fadeUp 0.3s ease ${index*0.04}s both`,
+    }}>
+      {/* Verified banner */}
+      {isVerified && (
+        <div style={{ background:"rgba(22,163,74,0.08)", borderBottom:"1px solid rgba(22,163,74,0.2)", padding:"6px 16px", display:"flex", alignItems:"center", gap:8 }}>
+          <Ico d={D.shield} size={13} stroke="#16a34a"/>
+          <span style={{ fontSize:12, fontWeight:700, color:"#16a34a" }}>Verified</span>
+          {record.verifier && <span style={{ fontSize:11.5, color:"#15803d" }}>by {record.verifier.name} · {timeAgo(record.verified_at)}</span>}
+          {!isProfessor && (
+            <span style={{ marginLeft:"auto", fontSize:11, color:"#16a34a", display:"flex", alignItems:"center", gap:4 }}>
+              <Ico d={D.lock} size={11} stroke="#16a34a"/> Locked
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Coloured header */}
+      <div style={{ background:color, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ width:36, height:36, borderRadius:10, background:"rgba(255,255,255,0.22)", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:11, fontWeight:700 }}>
+            {record.class_name?.slice(0,2).toUpperCase()}
           </div>
-          <span style={{background:cfg.bg,color:cfg.color,fontSize:11.5,fontWeight:700,padding:"3px 10px",borderRadius:99}}>{cfg.label}</span>
-        </div>
-
-        {/* Stats */}
-        <div style={{display:"flex",gap:10,marginBottom:16}}>
-          {[["Present","#16a34a",present],["Absent","#dc2626",absent],["Late","#d97706",late]].map(([l,c,v])=>(
-            <div key={l} style={{flex:1,background:c+"15",borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
-              <div style={{fontSize:22,fontWeight:800,color:c}}>{v}</div>
-              <div style={{fontSize:11,color:"var(--text-muted)",fontWeight:600}}>{l}</div>
+          <div>
+            <div style={{ color:"#fff", fontWeight:700, fontSize:14 }}>{record.class_name}</div>
+            <div style={{ color:"rgba(255,255,255,0.85)", fontSize:12 }}>
+              {fmtDate(record.record_date)}{record.session_label && ` · ${record.session_label}`}
             </div>
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+          {canVerify && (
+            <button onClick={() => onVerify(record.id)}
+              style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 10px", borderRadius:7, background:"rgba(255,255,255,0.92)", border:"none", color:"#16a34a", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+              <Ico d={D.checkC} size={13} stroke="#16a34a"/> Verify
+            </button>
+          )}
+          {canEdit && (
+            <button onClick={() => onEdit(record)} title="Edit"
+              style={{ padding:"5px 8px", borderRadius:7, background:"rgba(255,255,255,0.15)", border:"none", color:"#fff", cursor:"pointer" }}>
+              <Ico d={D.edit} size={14}/>
+            </button>
+          )}
+          {canDelete && (
+            <button onClick={() => onDelete(record)} title="Delete"
+              style={{ padding:"5px 8px", borderRadius:7, background:"rgba(255,255,255,0.15)", border:"none", color:"#fff", cursor:"pointer" }}>
+              <Ico d={D.trash} size={14}/>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Body */}
+      <div style={{ padding:"14px 16px" }}>
+        <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap" }}>
+          {[
+            { label:"Present", val:present, ...statusCfg.present },
+            { label:"Absent",  val:absent,  ...statusCfg.absent  },
+            { label:"Late",    val:late,    ...statusCfg.late     },
+            { label:"Total",   val:total,   bg:"var(--bg-tertiary)", color:"var(--text-secondary)" },
+          ].map(({ label, val, bg, color: c }) => (
+            <span key={label} style={{ padding:"3px 10px", borderRadius:99, background:bg, color:c, fontSize:12, fontWeight:600 }}>
+              {val} {label}
+            </span>
           ))}
         </div>
 
-        {/* Name list */}
-        <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:16}}>
-          {names.map((n,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:"var(--bg-tertiary)",borderRadius:8,fontSize:13}}>
-              <span style={{color:"var(--text-primary)"}}>{i+1}. {n.name}</span>
-              {editing ? (
-                <select value={n.status} onChange={e=>setNames(prev=>prev.map((r,j)=>j===i?{...r,status:e.target.value}:r))}
-                  style={{padding:"3px 8px",borderRadius:6,border:"1px solid var(--card-border)",background:"var(--input-bg)",color:n.status==="present"?"#16a34a":n.status==="late"?"#d97706":"#dc2626",fontSize:12,outline:"none"}}>
-                  <option value="present">Present</option>
-                  <option value="absent">Absent</option>
-                  <option value="late">Late</option>
-                </select>
-              ) : (
-                <span style={{fontSize:11.5,fontWeight:700,color:n.status==="present"?"#16a34a":n.status==="late"?"#d97706":"#dc2626",background:n.status==="present"?"#f0fdf4":n.status==="late"?"#fff7ed":"#fee2e2",padding:"2px 8px",borderRadius:99}}>
-                  {n.status?.charAt(0).toUpperCase()+n.status?.slice(1)}
-                </span>
-              )}
-            </div>
-          ))}
+        <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:record.notes?10:0 }}>
+          {record.poster?.picture && <img src={record.poster.picture} alt="" style={{ width:22, height:22, borderRadius:"50%", objectFit:"cover" }}/>}
+          <span style={{ fontSize:12, color:"var(--text-muted)" }}>
+            Posted by <strong style={{ color:"var(--text-secondary)" }}>{record.poster?.name || "Unknown"}</strong>
+            <span style={{ color:"var(--text-faint)" }}> · {timeAgo(record.created_at)}</span>
+          </span>
         </div>
 
-        {record.file_url && (
-          <a href={record.file_url} target="_blank" rel="noopener noreferrer"
-            style={{display:"inline-flex",alignItems:"center",gap:5,marginBottom:14,padding:"7px 12px",background:"var(--bg-tertiary)",borderRadius:8,fontSize:12.5,color:"var(--text-secondary)",textDecoration:"none"}}>
-            📎 View uploaded file
-          </a>
+        {record.notes && (
+          <div style={{ fontSize:12.5, color:"var(--text-muted)", background:"var(--bg-tertiary)", borderRadius:8, padding:"7px 10px", marginTop:4 }}>{record.notes}</div>
         )}
 
-        <div style={{display:"flex",gap:10,marginTop:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
-          {isProfessor && editing && (
-            <button onClick={handleSave} disabled={saving}
-              style={{display:"flex",alignItems:"center",gap:6,padding:"9px 16px",borderRadius:9,border:"none",background:"#2563eb",color:"#fff",fontSize:13.5,fontWeight:600,cursor:"pointer"}}>
-              {saving?"Saving…":"Save changes"}
+        {total > 0 && (
+          <>
+            <button onClick={() => setExpanded(e => !e)}
+              style={{ fontSize:12.5, color:"#16a34a", background:"none", border:"none", cursor:"pointer", fontWeight:600, padding:0, marginTop:10 }}>
+              {expanded ? "▲ Hide students" : `▼ View ${total} student${total!==1?"s":""}`}
             </button>
-          )}
-          {isProfessor && !editing && (
-            <button onClick={()=>setEditing(true)}
-              style={{display:"flex",alignItems:"center",gap:6,padding:"9px 16px",borderRadius:9,border:"1px solid var(--card-border)",background:"var(--bg-tertiary)",color:"var(--text-primary)",fontSize:13.5,cursor:"pointer"}}>
-              <IcoEdit/> Edit
-            </button>
-          )}
-          {isProfessor && record.status !== "verified" && !editing && (
-            <button onClick={()=>onVerify(record.id)}
-              style={{display:"flex",alignItems:"center",gap:6,padding:"9px 16px",borderRadius:9,border:"none",background:"#16a34a",color:"#fff",fontSize:13.5,fontWeight:600,cursor:"pointer"}}>
-              <IcoCheck/> Verify
-            </button>
-          )}
-          {editing && (
-            <button onClick={()=>{setEditing(false);setNames(record.names||[]);}}
-              style={{padding:"9px 16px",borderRadius:9,border:"1px solid var(--card-border)",background:"transparent",color:"var(--text-muted)",fontSize:13.5,cursor:"pointer"}}>Cancel</button>
-          )}
-          <button onClick={onClose} style={{padding:"9px 16px",borderRadius:9,border:"1px solid var(--card-border)",background:"transparent",color:"var(--text-muted)",fontSize:13.5,cursor:"pointer"}}>Close</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Attendance Record Card ────────────────────────────────────────
-function RecordCard({ rec, onClick, onDelete, showStudent }) {
-  const cfg     = statusColors[rec.status] || statusColors.draft;
-  const present = rec.names?.filter(n=>n.status==="present").length || 0;
-  const total   = rec.names?.length || 0;
-  return (
-    <div style={{display:"flex",alignItems:"center",padding:"12px 16px",borderBottom:"1px solid var(--border-color)",cursor:"pointer"}} onClick={onClick}>
-      <div style={{flex:1}}>
-        <div style={{fontSize:13.5,fontWeight:600,color:"var(--text-primary)"}}>{fmtDate(rec.record_date)}</div>
-        {showStudent && rec.user && (
-          <div style={{fontSize:11.5,color:"var(--green-700)",marginTop:1}}>👤 {rec.user.name||rec.user.email}</div>
-        )}
-        <div style={{fontSize:12,color:"var(--text-muted)",marginTop:2}}>
-          {total > 0 ? `${present}/${total} present` : "No names recorded"}
-        </div>
-      </div>
-      <span style={{background:cfg.bg,color:cfg.color,fontSize:11.5,fontWeight:700,padding:"3px 10px",borderRadius:99,marginRight:10}}>{cfg.label}</span>
-      {onDelete && (
-        <button onClick={e=>{e.stopPropagation();onDelete(rec.id);}} style={{background:"none",border:"none",color:"var(--text-faint)",cursor:"pointer",padding:4}}>
-          <IcoTrash/>
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ── Parent Attendance View ────────────────────────────────────────
-function ParentAttendanceView({ students }) {
-  const [selected, setSelected] = useState(students?.find(s=>!s.pending) || null);
-  const [records, setRecords]   = useState([]);
-  const [loading, setLoading]   = useState(false);
-  const [detail, setDetail]     = useState(null);
-
-  useEffect(()=>{
-    if (!selected || selected.pending) return;
-    setLoading(true);
-    api.get(`/attendance/parent/${selected.id}`)
-      .then(r=>setRecords(r.data.records||[]))
-      .catch(()=>setRecords([]))
-      .finally(()=>setLoading(false));
-  }, [selected?.id]);
-
-  if (!students?.length) return (
-    <div style={{textAlign:"center",padding:"60px 24px",background:"var(--card-bg)",borderRadius:16,border:"1px solid var(--card-border)"}}>
-      <div style={{fontSize:44,marginBottom:12}}>👨‍👩‍👧</div>
-      <p style={{color:"var(--text-muted)",fontSize:14}}>No linked students. Link a student from the Parent Dashboard.</p>
-    </div>
-  );
-
-  const grouped = records.reduce((acc,r)=>{const k=r.course_name;if(!acc[k])acc[k]=[];acc[k].push(r);return acc;},{});
-
-  return (
-    <div>
-      {/* Student selector */}
-      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-        {students.filter(s=>!s.pending).map(s=>(
-          <button key={s.id} onClick={()=>setSelected(s)} style={{
-            display:"flex",alignItems:"center",gap:8,padding:"8px 14px",borderRadius:10,cursor:"pointer",
-            border:`2px solid ${selected?.id===s.id?"#3730a3":"var(--border-color)"}`,
-            background:selected?.id===s.id?"#eef2ff":"var(--card-bg)",
-          }}>
-            {s.picture ? <img src={s.picture} style={{width:24,height:24,borderRadius:"50%"}}/> :
-              <div style={{width:24,height:24,borderRadius:"50%",background:"#3730a3",color:"#fff",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center"}}>{s.name?.charAt(0)}</div>}
-            <span style={{fontSize:13,fontWeight:500,color:"var(--text-primary)"}}>{s.name?.split(" ")[0]}</span>
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div style={{textAlign:"center",padding:40,color:"var(--text-muted)"}}>Loading…</div>
-      ) : records.length === 0 ? (
-        <div style={{textAlign:"center",padding:"40px 24px",background:"var(--card-bg)",borderRadius:16,border:"1px solid var(--card-border)"}}>
-          <div style={{fontSize:40,marginBottom:10}}>📋</div>
-          <p style={{color:"var(--text-muted)",fontSize:14}}>No attendance records for this student yet.</p>
-        </div>
-      ) : (
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          {Object.entries(grouped).map(([courseName,recs])=>(
-            <div key={courseName} style={{background:"var(--card-bg)",borderRadius:14,border:"1px solid var(--card-border)",overflow:"hidden"}}>
-              <div style={{padding:"12px 16px",background:"var(--bg-tertiary)",borderBottom:"1px solid var(--card-border)",display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:14,fontWeight:700,color:"var(--text-primary)"}}>{courseName}</span>
-                <span style={{fontSize:12,color:"var(--text-muted)",background:"var(--card-bg)",padding:"2px 8px",borderRadius:99}}>{recs.length} record{recs.length!==1?"s":""}</span>
+            {expanded && (
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:5, marginTop:8 }}>
+                {(record.names||[]).map((s,i) => {
+                  const cfg = statusCfg[s.status] || statusCfg.present;
+                  return (
+                    <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"5px 10px", borderRadius:8, background:"var(--bg-tertiary)", fontSize:12.5 }}>
+                      <span style={{ color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.name}</span>
+                      <span style={{ padding:"2px 7px", borderRadius:99, background:cfg.bg, color:cfg.color, fontSize:11, fontWeight:600, flexShrink:0, marginLeft:6 }}>{cfg.label}</span>
+                    </div>
+                  );
+                })}
               </div>
-              {recs.map(rec=>(
-                <RecordCard key={rec.id} rec={rec} onClick={()=>setDetail(rec)} showStudent={false}/>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {detail && <RecordDetail record={detail} isProfessor={false} onVerify={()=>{}} onSave={()=>{}} onClose={()=>setDetail(null)}/>}
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
-// ── Main Attendance Page ──────────────────────────────────────────
+// ── Main page ─────────────────────────────────────────────────────
 export default function Attendance() {
   const { user } = useAuth();
   const isProfessor = user?.role === "professor";
-  const isParent    = user?.role === "parent";
 
-  const [records, setRecords]   = useState([]);
-  const [students, setStudents] = useState([]); // for parent
-  const [loading, setLoading]   = useState(true);
-  const [showNew, setShowNew]   = useState(false);
-  const [selected, setSelected] = useState(null);
-  const [courses, setCourses]   = useState([]);
-  const [error, setError]       = useState("");
+  const [records,      setRecords]      = useState([]);
+  const [courses,      setCourses]      = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [syncing,      setSyncing]      = useState(false);   // course sync indicator
+  const [refreshing,   setRefreshing]   = useState(false);
+  const [filterClass,  setFilterClass]  = useState("all");
+  const [showModal,    setShowModal]    = useState(false);
+  const [editRecord,   setEditRecord]   = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting,     setDeleting]     = useState(false);
+  const [error,        setError]        = useState("");
+  const [liveMsg,      setLiveMsg]      = useState("");
+  const sseRef = useRef(null);
 
-  const load = async () => {
+  // ── Fetch records + courses ─────────────────────────────────────
+  const loadData = useCallback(async (bg = false) => {
+    if (bg) setRefreshing(true); else setLoading(true);
     try {
-      if (isParent) {
-        const res = await api.get("/parent/students");
-        setStudents(res.data.students || []);
-        setLoading(false);
-        return;
-      }
-
-      const endpoint = isProfessor ? "/attendance/professor/all" : "/attendance";
       const [recRes, courseRes] = await Promise.all([
-        api.get(endpoint),
-        api.get(isProfessor ? "/professor/courses" : "/classroom/courses").catch(()=>({data:{courses:[]}})),
+        api.get("/attendance/my-classes"),
+        api.get(isProfessor ? "/professor/courses" : "/classroom/courses"),
       ]);
       setRecords(recRes.data.records || []);
-      setCourses(courseRes.data.courses || []);
-    } catch { setError("Failed to load attendance"); }
-    finally { setLoading(false); }
+      const crs = (courseRes.data.courses || []).map(c => ({
+        id:   c.id,
+        name: c.name || c.courseName || c.section || c.id,
+      }));
+      setCourses(crs);
+      setError("");
+    } catch {
+      if (!bg) setError("Could not load attendance — check your connection.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [isProfessor]);
+
+  // ── On mount: sync courses first, then load data ────────────────
+  useEffect(() => {
+    const init = async () => {
+      setSyncing(true);
+      try {
+        // Populate user_courses so /my-classes returns correct data
+        await api.post("/attendance/sync-courses");
+      } catch {
+        // Non-fatal — loadData will still try from existing cache
+      } finally {
+        setSyncing(false);
+      }
+      await loadData(false);
+    };
+    init();
+  }, [loadData]);
+
+  // ── SSE realtime ────────────────────────────────────────────────
+  useEffect(() => {
+    const token   = localStorage.getItem("bupulse_token");
+    const apiBase = import.meta.env.VITE_API_URL || "";
+    if (!token) return;
+
+    const url = `${apiBase}/api/attendance/events?token=${encodeURIComponent(token)}`;
+    const es  = new EventSource(url);
+    sseRef.current = es;
+
+    es.onmessage = e => {
+      try {
+        const { event, record, recordId } = JSON.parse(e.data);
+        if (event === "INSERT" && record) {
+          setRecords(prev => prev.find(r => r.id === record.id) ? prev : [record, ...prev]);
+          setLiveMsg("New attendance posted"); setTimeout(() => setLiveMsg(""), 3000);
+        } else if (event === "UPDATE" && record) {
+          setRecords(prev => prev.map(r => r.id === record.id ? record : r));
+        } else if (event === "DELETE" && recordId) {
+          setRecords(prev => prev.filter(r => r.id !== recordId));
+          setLiveMsg("Record removed"); setTimeout(() => setLiveMsg(""), 3000);
+        }
+      } catch {}
+    };
+
+    es.onerror = () => {}; // auto-reconnects
+
+    return () => { es.close(); sseRef.current = null; };
+  }, []);
+
+  // ── Manual refresh — re-sync then reload ───────────────────────
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try { await api.post("/attendance/sync-courses"); } catch {}
+    await loadData(true);
   };
 
-  useEffect(()=>{load();},[]);
-
-  const handleSave = async (form) => {
-    try { await api.post("/attendance", form); setShowNew(false); load(); }
-    catch(err) { setError(err.response?.data?.error || "Failed to save"); }
+  // ── Handlers ────────────────────────────────────────────────────
+  const handleSave = record => {
+    setRecords(prev => {
+      const idx = prev.findIndex(r => r.id === record.id);
+      if (idx >= 0) { const n=[...prev]; n[idx]=record; return n; }
+      return [record, ...prev];
+    });
+    setShowModal(false); setEditRecord(null);
   };
 
-  const handleVerify = async (id) => {
-    try { await api.patch(`/attendance/${id}/verify`); setSelected(null); load(); }
-    catch(err) { setError(err.response?.data?.error || "Failed to verify"); }
-  };
-
-  const handleEdit = async (id, names) => {
+  const handleVerify = async id => {
     try {
-      const endpoint = isProfessor ? `/attendance/professor/${id}` : `/attendance/${id}`;
-      await api.patch(endpoint, { names });
-      load();
-    } catch(err) { setError(err.response?.data?.error || "Failed to save"); }
+      const r = await api.patch(`/attendance/class/${id}/verify`);
+      setRecords(prev => prev.map(rec => rec.id === id ? r.data.record : rec));
+    } catch (err) { setError(err.response?.data?.error || "Verification failed"); }
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("Delete this attendance record?")) return;
-    try { await api.delete(`/attendance/${id}`); setRecords(prev=>prev.filter(r=>r.id!==id)); }
-    catch { setError("Failed to delete"); }
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setRecords(prev => prev.filter(r => r.id !== deleteTarget.id)); // optimistic
+    try {
+      await api.delete(`/attendance/class/${deleteTarget.id}`);
+    } catch (err) {
+      setError(err.response?.data?.error || "Delete failed");
+      loadData(true); // revert optimistic on failure
+    } finally { setDeleting(false); setDeleteTarget(null); }
   };
 
-  const grouped = records.reduce((acc,r)=>{
-    const key = isProfessor ? (r.course_name) : r.course_name;
-    if(!acc[key]) acc[key]=[];
-    acc[key].push(r);
-    return acc;
-  },{});
+  // ── Derived ─────────────────────────────────────────────────────
+  const filtered      = filterClass === "all" ? records : records.filter(r => r.class_id === filterClass);
+  const totalPresent  = filtered.reduce((s,r) => s + (r.names||[]).filter(n=>n.status==="present").length, 0);
+  const totalStudents = filtered.reduce((s,r) => s + (r.names||[]).length, 0);
+  const pct           = totalStudents ? Math.round((totalPresent/totalStudents)*100) : 0;
 
-  // Parent view
-  if (isParent) return (
-    <div style={{animation:"fadeIn 0.3s ease",maxWidth:800,margin:"0 auto",width:"100%"}}>
-      <div style={{marginBottom:20}}>
-        <h1 style={{fontSize:22,fontWeight:800,color:"var(--text-primary)",margin:0,display:"flex",alignItems:"center",gap:8}}>
-          <IcoUsers/> Student Attendance
-        </h1>
-        <p style={{fontSize:13.5,color:"var(--text-muted)",margin:"4px 0 0"}}>View your child's attendance records</p>
+  // ── Skeleton ────────────────────────────────────────────────────
+  if (loading || syncing) return (
+    <div style={{ maxWidth:900, margin:"0 auto" }}>
+      <div style={{ textAlign:"center", padding:"60px 0", color:"var(--text-muted)" }}>
+        <div style={{ width:36, height:36, border:"3px solid var(--border-color)", borderTopColor:"#16a34a", borderRadius:"50%", animation:"spin 0.8s linear infinite", margin:"0 auto 14px" }}/>
+        <div style={{ fontSize:14 }}>{syncing ? "Syncing your class roster…" : "Loading attendance…"}</div>
       </div>
-      {loading ? <div style={{textAlign:"center",padding:40,color:"var(--text-muted)"}}>Loading…</div>
-        : <ParentAttendanceView students={students}/>}
-      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}`}</style>
     </div>
   );
 
   return (
-    <div style={{animation:"fadeIn 0.3s ease",maxWidth:800,margin:"0 auto",width:"100%"}}>
+    <div style={{ maxWidth:900, margin:"0 auto", animation:"fadeIn 0.35s ease" }}>
+
       {/* Header */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:10}}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
         <div>
-          <h1 style={{fontSize:22,fontWeight:800,color:"var(--text-primary)",margin:0,display:"flex",alignItems:"center",gap:8}}>
-            <IcoUsers/> Attendance
-          </h1>
-          <p style={{fontSize:13.5,color:"var(--text-muted)",margin:"4px 0 0"}}>
-            {isProfessor ? "View and verify all student attendance records" : "Track and submit attendance records"}
-          </p>
+          <h1 style={{ fontSize:22, fontWeight:700, color:"var(--text-primary)", fontFamily:"var(--font-display)", marginBottom:2 }}>Attendance</h1>
+          <div style={{ fontSize:12.5, color:"var(--text-muted)", display:"flex", alignItems:"center", gap:7 }}>
+            <div style={{ width:7, height:7, borderRadius:"50%", background:"#22c55e", animation:"pulse-dot 2.5s ease infinite", flexShrink:0 }} title="Realtime connected"/>
+            {liveMsg
+              ? <span style={{ color:"#16a34a", fontWeight:600 }}>{liveMsg}</span>
+              : refreshing ? "Updating…"
+              : `${records.length} record${records.length!==1?"s":""} · ${courses.length} class${courses.length!==1?"es":""}`
+            }
+          </div>
         </div>
-        <button onClick={()=>setShowNew(true)}
-          style={{display:"flex",alignItems:"center",gap:6,padding:"9px 16px",borderRadius:10,border:"none",background:"var(--green-700)",color:"#fff",fontSize:13.5,fontWeight:600,cursor:"pointer"}}>
-          <IcoPlus/> New record
-        </button>
+        <div style={{ display:"flex", gap:8 }}>
+          <button onClick={handleRefresh} title="Refresh" disabled={refreshing}
+            style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 12px", borderRadius:10, border:"1px solid var(--card-border)", background:"transparent", color:"var(--text-secondary)", fontSize:13, cursor:"pointer", opacity:refreshing?0.6:1 }}>
+            <Ico d={D.refresh} size={14}/>
+          </button>
+          <button onClick={() => { setEditRecord(null); setShowModal(true); }}
+            style={{ display:"flex", alignItems:"center", gap:7, padding:"9px 18px", borderRadius:10, border:"none", background:"#16a34a", color:"#fff", fontWeight:600, fontSize:14, cursor:"pointer", boxShadow:"0 2px 8px rgba(22,163,74,0.3)" }}>
+            <Ico d={D.plus} size={15} stroke="#fff"/> New Record
+          </button>
+        </div>
       </div>
 
+      {/* Error */}
       {error && (
-        <div style={{background:"#fee2e2",border:"1px solid #fecaca",borderRadius:10,padding:"10px 14px",color:"#b91c1c",fontSize:13,marginBottom:14,display:"flex",justifyContent:"space-between"}}>
-          {error}<button onClick={()=>setError("")} style={{background:"none",border:"none",color:"#b91c1c",cursor:"pointer"}}>✕</button>
+        <div style={{ background:"#fee2e2", borderRadius:10, padding:"11px 16px", color:"#dc2626", fontSize:13.5, marginBottom:14, display:"flex", alignItems:"center", gap:10 }}>
+          <Ico d={D.warn} size={16} stroke="#dc2626"/>{error}
+          <button onClick={() => setError("")} style={{ marginLeft:"auto", background:"none", border:"none", color:"#dc2626", cursor:"pointer" }}><Ico d={D.x} size={14} stroke="#dc2626"/></button>
         </div>
       )}
 
-      {loading ? (
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {[...Array(3)].map((_,i)=><div key={i} style={{height:80,borderRadius:12,background:"var(--card-bg)",animation:"pulse-bg 1.5s ease infinite"}}/>)}
+      {/* No courses warning */}
+      {courses.length === 0 && !loading && (
+        <div style={{ background:"#fef9c3", border:"1px solid #fde047", borderRadius:12, padding:"12px 16px", color:"#854d0e", fontSize:13.5, marginBottom:14, display:"flex", gap:10, alignItems:"flex-start" }}>
+          <Ico d={D.info} size={16} stroke="#854d0e"/>
+          <span>No classes found. Make sure you're enrolled in Google Classroom courses and try <button onClick={handleRefresh} style={{ color:"#b45309", fontWeight:700, background:"none", border:"none", cursor:"pointer", textDecoration:"underline" }}>refreshing</button>.</span>
         </div>
-      ) : records.length === 0 ? (
-        <div style={{textAlign:"center",padding:"60px 24px",background:"var(--card-bg)",borderRadius:16,border:"1px solid var(--card-border)"}}>
-          <div style={{fontSize:48,marginBottom:12}}>📋</div>
-          <h3 style={{fontSize:17,fontWeight:700,color:"var(--text-primary)",marginBottom:8}}>No attendance records</h3>
-          <p style={{fontSize:14,color:"var(--text-muted)",marginBottom:20}}>Start by creating a new attendance record.</p>
-          <button onClick={()=>setShowNew(true)} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"10px 18px",borderRadius:10,border:"none",background:"var(--green-700)",color:"#fff",fontSize:13.5,fontWeight:600,cursor:"pointer"}}>
-            <IcoPlus/> New record
-          </button>
+      )}
+
+      {/* Stats */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginBottom:16 }}>
+        <StatBox label="Sessions"        value={filtered.length}  color="var(--text-primary)"/>
+        <StatBox label="Total Present"   value={totalPresent}     color="#16a34a"/>
+        <StatBox label="Attendance Rate" value={`${pct}%`}        color={pct>=75?"#16a34a":pct>=50?"#ca8a04":"#dc2626"}/>
+      </div>
+
+      {/* Class filter */}
+      {courses.length > 1 && (
+        <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
+          {["all", ...courses.map(c=>c.id)].map(id => {
+            const name   = id==="all" ? "All Classes" : courses.find(c=>c.id===id)?.name||id;
+            const active = filterClass === id;
+            return (
+              <button key={id} onClick={() => setFilterClass(id)}
+                style={{ padding:"5px 14px", borderRadius:99, border:`1.5px solid ${active?"#16a34a":"var(--border-color)"}`, background:active?"rgba(22,163,74,0.1)":"transparent", color:active?"#16a34a":"var(--text-muted)", fontSize:12.5, fontWeight:active?600:400, cursor:"pointer", transition:"all 0.12s" }}>
+                {name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Records */}
+      {filtered.length === 0 ? (
+        <div style={{ background:"var(--card-bg)", border:"1px solid var(--card-border)", borderRadius:16, padding:"48px 24px", textAlign:"center" }}>
+          <div style={{ fontSize:38, marginBottom:10 }}>📋</div>
+          <div style={{ fontSize:15, fontWeight:600, color:"var(--text-primary)", marginBottom:6 }}>No attendance records yet</div>
+          <div style={{ fontSize:13.5, color:"var(--text-muted)" }}>
+            {courses.length === 0 ? "No classes found — try refreshing." : "Be the first to post attendance for your class."}
+          </div>
         </div>
       ) : (
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          {Object.entries(grouped).map(([courseName,recs])=>(
-            <div key={courseName} style={{background:"var(--card-bg)",borderRadius:14,border:"1px solid var(--card-border)",overflow:"hidden"}}>
-              <div style={{padding:"12px 16px",background:"var(--bg-tertiary)",borderBottom:"1px solid var(--card-border)",display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:14,fontWeight:700,color:"var(--text-primary)"}}>{courseName}</span>
-                <span style={{fontSize:12,color:"var(--text-muted)",background:"var(--card-bg)",padding:"2px 8px",borderRadius:99}}>{recs.length} record{recs.length!==1?"s":""}</span>
-              </div>
-              {recs.map(rec=>(
-                <RecordCard key={rec.id} rec={rec} onClick={()=>setSelected(rec)} onDelete={!isProfessor?handleDelete:null} showStudent={isProfessor}/>
-              ))}
-            </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          {filtered.map((record, i) => (
+            <AttendanceCard key={record.id} record={record} index={i} currentUser={user}
+              onEdit={rec => { setEditRecord(rec); setShowModal(true); }}
+              onDelete={rec => setDeleteTarget(rec)}
+              onVerify={handleVerify}
+            />
           ))}
         </div>
       )}
 
-      {showNew && <NewRecordModal courses={courses} onSave={handleSave} onClose={()=>setShowNew(false)}/>}
-      {selected && (
-        <RecordDetail
-          record={selected}
-          isProfessor={isProfessor}
-          onVerify={handleVerify}
-          onSave={handleEdit}
-          onClose={()=>setSelected(null)}
-        />
-      )}
+      {showModal && <RecordModal courses={courses} existing={editRecord} onSave={handleSave} onClose={() => { setShowModal(false); setEditRecord(null); }}/>}
+      {deleteTarget && <DeleteModal record={deleteTarget} loading={deleting} onConfirm={handleDeleteConfirm} onCancel={() => setDeleteTarget(null)}/>}
 
       <style>{`
-        @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-        @keyframes pulse-bg{0%,100%{opacity:1}50%{opacity:0.5}}
+        @keyframes pulse     { 0%,100%{opacity:1} 50%{opacity:0.45} }
+        @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.3}  }
+        @keyframes fadeIn    { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes fadeUp    { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes scaleIn   { from{opacity:0;transform:scale(0.94)} to{opacity:1;transform:scale(1)} }
+        @keyframes spin      { to{transform:rotate(360deg)} }
       `}</style>
     </div>
   );
