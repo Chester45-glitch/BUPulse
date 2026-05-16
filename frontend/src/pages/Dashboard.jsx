@@ -1,3 +1,4 @@
+import { sanitizeAnnouncement, announcementPreview } from "../utils/sanitizeHtml";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -202,8 +203,11 @@ export default function Dashboard() {
                     {(ann.courseName||"?").slice(0,2).toUpperCase()}
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:11.5, fontWeight:700, color:"var(--text-secondary)", marginBottom:2 }}>{ann.courseName}</div>
-                    <div style={{ fontSize:13, color:"var(--text-primary)", lineHeight:1.45, marginBottom:3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{ann.text?.substring(0,70)}{ann.text?.length>70?"…":""}</div>
+                    <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:2 }}>
+                      <div style={{ fontSize:11.5, fontWeight:700, color:"var(--text-secondary)" }}>{ann.courseName}</div>
+                      {ann.priority==="urgent" && <span style={{ fontSize:10, fontWeight:700, background:"#fee2e2", color:"#dc2626", padding:"1px 6px", borderRadius:99 }}>URGENT</span>}
+                    </div>
+                    <div style={{ fontSize:13, color:"var(--text-primary)", lineHeight:1.45, marginBottom:3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{announcementPreview(ann.text||"", 80)}</div>
                     <div style={{ fontSize:11, color:"var(--text-muted)" }}>{ago}</div>
                   </div>
                 </div>

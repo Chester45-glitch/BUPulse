@@ -24,9 +24,6 @@ export default function ParentDashboard() {
   const [linkSuccess, setLinkSuccess] = useState("");
   const [activeTab, setActiveTab] = useState("deadlines");
   const [dataError, setDataError] = useState("");
-  const [attendance, setAttendance] = useState([]);
-  const [attendanceLoading, setAttendanceLoading] = useState(false);
-  const [attendanceFilter, setAttendanceFilter] = useState("all");
 
   const loadStudents = async () => {
     setLoadingStudents(true);
@@ -57,13 +54,6 @@ export default function ParentDashboard() {
       .then(r => setStudentData(r.data))
       .catch(err => setDataError(err.response?.data?.error || "Failed to load student data"))
       .finally(() => setLoadingData(false));
-
-    // Load attendance for linked student
-    setAttendanceLoading(true);
-    api.get(`/parent/student/${selectedStudent.id}/attendance`)
-      .then(r => setAttendance(r.data.records || []))
-      .catch(() => setAttendance([]))
-      .finally(() => setAttendanceLoading(false));
   }, [selectedStudent]);
 
   const handleLink = async (e) => {
@@ -241,39 +231,45 @@ export default function ParentDashboard() {
                   {activeTab === "deadlines" && (
                     <div>
                       {overdue.length > 0 && (
-                        <div style={{ marginBottom: 16 }}>
-                          <h4 style={{ fontSize: 13, fontWeight: 700, color: "#dc2626", marginBottom: 8 }}>🚨 Overdue ({overdue.length})</h4>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <div style={{ marginBottom: 18 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                            <span style={{ fontSize:15, fontWeight:800, color:"#dc2626" }}>🚨 Overdue</span>
+                            <span style={{ background:"#dc2626", color:"#fff", fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:99 }}>{overdue.length}</span>
+                          </div>
+                          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                             {overdue.map((d, i) => {
                               const info = daysInfo(d.dueDate);
                               return (
-                                <div key={i} style={{ background: "#fff5f5", borderRadius: 10, border: "1px solid #fee2e2", padding: "12px 14px", display: "flex", gap: 12, alignItems: "center" }}>
-                                  <div style={{ flex: 1 }}>
-                                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{d.title}</div>
-                                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{d.courseName}</div>
+                                <div key={i} style={{ background:"#fff5f5", borderRadius:12, border:"1.5px solid #fecaca", padding:"14px 16px" }}>
+                                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10, marginBottom:6 }}>
+                                    <div style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)", lineHeight:1.35 }}>{d.title}</div>
+                                    <span style={{ background:info.bg, color:info.color, fontSize:12, fontWeight:700, padding:"3px 10px", borderRadius:99, flexShrink:0, whiteSpace:"nowrap" }}>{info.label}</span>
                                   </div>
-                                  <span style={{ background: info.bg, color: info.color, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, flexShrink: 0 }}>{info.label}</span>
+                                  <div style={{ fontSize:13, color:"#dc2626", fontWeight:600, marginBottom:3 }}>{d.courseName}</div>
+                                  <div style={{ fontSize:12, color:"var(--text-muted)" }}>{new Date(d.dueDate).toLocaleDateString("en-PH",{weekday:"short",month:"short",day:"numeric",year:"numeric"})}</div>
                                 </div>
                               );
                             })}
                           </div>
                         </div>
                       )}
-
-                      <h4 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>📋 Upcoming ({upcoming.length})</h4>
+                      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                        <span style={{ fontSize:15, fontWeight:800, color:"var(--text-primary)" }}>📋 Upcoming</span>
+                        <span style={{ background:"var(--bg-tertiary)", color:"var(--text-secondary)", fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:99 }}>{upcoming.length}</span>
+                      </div>
                       {upcoming.length === 0
-                        ? <div style={{ textAlign: "center", padding: 24, color: "var(--text-muted)" }}>🎉 No upcoming deadlines!</div>
-                        : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        ? <div style={{ textAlign:"center", padding:28, color:"var(--text-muted)" }}>🎉 No upcoming deadlines!</div>
+                        : <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                           {upcoming.map((d, i) => {
                             const info = daysInfo(d.dueDate);
                             return (
-                              <div key={i} style={{ background: "var(--card-bg)", borderRadius: 10, border: "1px solid var(--card-border)", padding: "12px 14px", display: "flex", gap: 12, alignItems: "center" }}>
-                                <div style={{ flex: 1 }}>
-                                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{d.title}</div>
-                                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{d.courseName}</div>
-                                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{new Date(d.dueDate).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}</div>
+                              <div key={i} style={{ background:"var(--card-bg)", borderRadius:12, border:"1px solid var(--card-border)", padding:"14px 16px" }}>
+                                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10, marginBottom:6 }}>
+                                  <div style={{ fontSize:15, fontWeight:700, color:"var(--text-primary)", lineHeight:1.35 }}>{d.title}</div>
+                                  <span style={{ background:info.bg, color:info.color, fontSize:12, fontWeight:700, padding:"3px 10px", borderRadius:99, flexShrink:0, whiteSpace:"nowrap" }}>{info.label}</span>
                                 </div>
-                                <span style={{ background: info.bg, color: info.color, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, flexShrink: 0 }}>{info.label}</span>
+                                <div style={{ fontSize:13, color:"var(--text-secondary)", fontWeight:600, marginBottom:4 }}>{d.courseName}</div>
+                                <div style={{ fontSize:12, color:"var(--text-muted)" }}>{new Date(d.dueDate).toLocaleDateString("en-PH",{weekday:"short",month:"short",day:"numeric",year:"numeric"})}</div>
                               </div>
                             );
                           })}
@@ -283,120 +279,68 @@ export default function ParentDashboard() {
                   )}
 
                   {/* Announcements tab */}
-                  {activeTab === "announcements" && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {announcements.length === 0
-                        ? <div style={{ textAlign: "center", padding: 24, color: "var(--text-muted)" }}>📭 No announcements</div>
-                        : announcements.map((ann, i) => (
-                          <div key={i} style={{ background: "var(--card-bg)", borderRadius: 10, border: "1px solid var(--card-border)", padding: "12px 14px" }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: "#3730a3", marginBottom: 4 }}>{ann.courseName}</div>
-                            <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5, whiteSpace:"pre-line" }}>{sanitizeAnnouncement(ann.text || "")}</div>
-                          </div>
-                        ))
-                      }
-                    </div>
-                  )}
-
-                  {/* Attendance tab */}
-                  {activeTab === "attendance" && (() => {
-                    const statusCfg = {
-                      present: { bg:"#dcfce7", color:"#16a34a", label:"Present" },
-                      absent:  { bg:"#fee2e2", color:"#dc2626", label:"Absent"  },
-                      late:    { bg:"#fef9c3", color:"#ca8a04", label:"Late"    },
+                  {activeTab === "announcements" && (() => {
+                    const uniqueCourses = [...new Set(announcements.map(a => a.courseName).filter(Boolean))];
+                    const filteredAnn = annCourseFilter === "all"
+                      ? announcements
+                      : announcements.filter(a => a.courseName === annCourseFilter);
+                    const timeAgo = iso => {
+                      if (!iso) return "";
+                      const m = Math.floor((Date.now()-new Date(iso))/60000);
+                      if (m<1) return "Just now"; if (m<60) return `${m}m ago`;
+                      const h=Math.floor(m/60); if (h<24) return `${h}h ago`;
+                      return `${Math.floor(h/24)}d ago`;
                     };
-                    const uniqueClasses = [...new Set(attendance.map(r => r.class_id))];
-                    const filtered = attendanceFilter === "all"
-                      ? attendance
-                      : attendance.filter(r => r.class_id === attendanceFilter);
-
                     return (
                       <div>
-                        {attendanceLoading ? (
-                          <div style={{ textAlign:"center", padding:32, color:"var(--text-muted)" }}>Loading attendance…</div>
-                        ) : attendance.length === 0 ? (
-                          <div style={{ textAlign:"center", padding:32, color:"var(--text-muted)" }}>
-                            <div style={{ fontSize:36, marginBottom:10 }}>📋</div>
-                            <p style={{ fontSize:14 }}>No attendance records found for this student.</p>
+                        {/* Course filter pills */}
+                        {uniqueCourses.length > 1 && (
+                          <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
+                            {["all", ...uniqueCourses].map(c => {
+                              const active = annCourseFilter === c;
+                              const label = c==="all" ? "All Courses" : c.length>22 ? c.slice(0,21)+"…" : c;
+                              return (
+                                <button key={c} onClick={() => setAnnCourseFilter(c)}
+                                  style={{ padding:"4px 12px", borderRadius:99, fontSize:11.5, fontWeight:active?700:400,
+                                    border:`1.5px solid ${active?"#3730a3":"var(--border-color)"}`,
+                                    background:active?"rgba(55,48,163,0.1)":"transparent",
+                                    color:active?"#3730a3":"var(--text-muted)", cursor:"pointer", transition:"all 0.12s" }}>
+                                  {label}
+                                </button>
+                              );
+                            })}
                           </div>
-                        ) : (
-                          <>
-                            {/* Class filter pills */}
-                            {uniqueClasses.length > 1 && (
-                              <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:14 }}>
-                                {["all", ...uniqueClasses].map(id => {
-                                  const name = id === "all" ? "All Classes" : attendance.find(r=>r.class_id===id)?.class_name || id;
-                                  const active = attendanceFilter === id;
-                                  return (
-                                    <button key={id} onClick={() => setAttendanceFilter(id)}
-                                      style={{ padding:"4px 12px", borderRadius:99, fontSize:12, fontWeight:active?600:400,
-                                        border:`1.5px solid ${active?"#3730a3":"var(--border-color)"}`,
-                                        background:active?"rgba(55,48,163,0.1)":"transparent",
-                                        color:active?"#3730a3":"var(--text-muted)", cursor:"pointer" }}>
-                                      {name.length > 24 ? name.slice(0,24)+"…" : name}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
+                        )}
 
-                            {/* Summary stats */}
-                            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
-                              {["present","absent","late"].map(s => {
-                                const count = filtered.reduce((acc,r) => acc + (r.names||[]).filter(n=>n.status===s).length, 0);
-                                const cfg = statusCfg[s];
-                                return (
-                                  <div key={s} style={{ background:cfg.bg, borderRadius:10, padding:"10px 14px", textAlign:"center" }}>
-                                    <div style={{ fontSize:22, fontWeight:700, color:cfg.color }}>{count}</div>
-                                    <div style={{ fontSize:11, color:cfg.color, fontWeight:600 }}>{cfg.label}</div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-
-                            {/* Records list */}
-                            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                              {filtered.map((record,i) => {
-                                const isVerified = record.is_verified === true;
-                                const studentNames = record.names || [];
-                                return (
-                                  <div key={record.id||i} style={{ background:"var(--card-bg)", borderRadius:10,
-                                    border:`1px solid ${isVerified?"rgba(22,163,74,0.35)":"var(--card-border)"}`,
-                                    overflow:"hidden" }}>
-                                    {isVerified && (
-                                      <div style={{ background:"rgba(22,163,74,0.08)", padding:"4px 12px", fontSize:11, color:"#16a34a", fontWeight:700, display:"flex", alignItems:"center", gap:5 }}>
-                                        ✅ Verified {record.verifier?.name ? `by ${record.verifier.name}` : ""}
-                                      </div>
-                                    )}
-                                    <div style={{ padding:"12px 14px" }}>
-                                      <div style={{ display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:6, marginBottom:8 }}>
-                                        <div>
-                                          <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)" }}>{record.class_name}</div>
-                                          <div style={{ fontSize:11.5, color:"var(--text-muted)" }}>
-                                            {record.record_date ? new Date(record.record_date).toLocaleDateString("en-PH",{weekday:"short",month:"short",day:"numeric",year:"numeric"}) : ""}
-                                            {record.session_label ? ` · ${record.session_label}` : ""}
-                                          </div>
-                                        </div>
-                                        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                                          {["present","absent","late"].map(s => {
-                                            const c = studentNames.filter(n=>n.status===s).length;
-                                            if (!c) return null;
-                                            const cfg = statusCfg[s];
-                                            return <span key={s} style={{ padding:"2px 8px", borderRadius:99, background:cfg.bg, color:cfg.color, fontSize:11, fontWeight:600 }}>{c} {cfg.label}</span>;
-                                          })}
-                                        </div>
-                                      </div>
-                                      {record.poster && (
-                                        <div style={{ fontSize:11.5, color:"var(--text-faint)" }}>
-                                          Posted by {record.poster.name || "Unknown"}
-                                        </div>
-                                      )}
+                        {filteredAnn.length === 0
+                          ? <div style={{ textAlign:"center", padding:28, color:"var(--text-muted)" }}>📭 No announcements</div>
+                          : <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                            {filteredAnn.map((ann, i) => {
+                              const isUrgent = ann.priority === "urgent";
+                              const cleanText = sanitizeAnnouncement(ann.text || "");
+                              return (
+                                <div key={i} style={{ background:"var(--card-bg)", borderRadius:12,
+                                  border:`1.5px solid ${isUrgent?"#fecaca":"var(--card-border)"}`,
+                                  overflow:"hidden" }}>
+                                  {isUrgent && (
+                                    <div style={{ background:"#dc2626", padding:"5px 14px", fontSize:11.5, fontWeight:700, color:"#fff", display:"flex", alignItems:"center", gap:6 }}>
+                                      🔴 URGENT ANNOUNCEMENT
+                                    </div>
+                                  )}
+                                  <div style={{ padding:"12px 14px" }}>
+                                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:6 }}>
+                                      <div style={{ fontSize:13, fontWeight:700, color:"#3730a3" }}>{ann.courseName}</div>
+                                      <div style={{ fontSize:11, color:"var(--text-faint)", flexShrink:0 }}>{timeAgo(ann.updateTime||ann.creationTime)}</div>
+                                    </div>
+                                    <div style={{ fontSize:14, fontWeight:600, color:"var(--text-primary)", lineHeight:1.5, marginBottom:4, whiteSpace:"pre-line" }}>
+                                      {cleanText.length > 200 ? cleanText.slice(0,200)+"…" : cleanText}
                                     </div>
                                   </div>
-                                );
-                              })}
-                            </div>
-                          </>
-                        )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        }
                       </div>
                     );
                   })()}

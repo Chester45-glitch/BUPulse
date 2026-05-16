@@ -501,6 +501,14 @@ export default function Schedule() {
     catch{setError("Failed to delete");}
   };
 
+  const handleDeleteAll = async () => {
+    if(!confirm(`Delete all ${schedules.length} schedule entries? This cannot be undone.`))return;
+    try{
+      await Promise.all(schedules.map(s => api.delete(`/schedule/${s.id}`)));
+      setSchedules([]);
+    }catch{setError("Failed to delete all schedules");}
+  };
+
   const renderWeek = () => {
     // ── Time grid config ──────────────────────────────────────
     const SLOT_HEIGHT = 30;   // px per 30-minute slot
@@ -694,6 +702,11 @@ export default function Schedule() {
           <button onClick={()=>{setEditEntry(null);setShowModal(true);}} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",borderRadius:10,border:"none",background:"var(--green-700)",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>
             <IcoPlus/> Add class
           </button>
+          {schedules.length>0&&(
+            <button onClick={handleDeleteAll} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",borderRadius:10,border:"1.5px solid #fecaca",background:"#fee2e2",color:"#dc2626",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+              <IcoTrash/> Delete all
+            </button>
+          )}
         </div>
       </div>
 

@@ -3,8 +3,17 @@ import { useState, useEffect, useCallback } from "react";
 // ── Clean course code prefixes from subject names ─────────────────
 // "CS 104B - Data Structure and Algorithm" → "Data Structure and Algorithm"
 const cleanSubjectName = (name = "") => {
-  const cleaned = name.replace(/^[A-Z]{2,6}\s?\d+[A-Z]?\s*[-\u2013\u2014]\s*/i, "").trim();
-  return cleaned || name;
+  if (!name) return name;
+  let s = name.trim();
+
+  // 1. Strip literal "Course name " / "Course starred " / "Course " prefixes (BULMS-specific)
+  s = s.replace(/^Course\s+(name|starred|pinned|archived|active)?\s*/i, "").trim();
+
+  // 2. Strip course code prefixes: "CS 104B - ", "IT203 - ", "MATH 1A - ", "CS-IT-IS_106 - "
+  s = s.replace(/^[A-Z]{2,}[\s\-_]*[A-Z0-9]*[\s\-_]*\d+[A-Z0-9]*[\s\-_]*[-–—]+\s*/i, "").trim();
+
+  // 3. If result is empty (edge case), return original
+  return s || name.trim();
 };
 
 import api from "../utils/api";
