@@ -333,37 +333,67 @@ const createAnnouncement = async (courseId, text, accessToken, refreshToken, dri
 // ── Parse due date/time into Classroom API format ─────────────────
 // dateStr: "YYYY-MM-DD", timeStr: "HH:MM" (optional, defaults 23:59)
 // ── Resolve relative date strings to YYYY-MM-DD ──────────────────
+// ── Get current date/time in Philippine time (UTC+8) ──────────────
+const nowPH = () => {
+  // Returns a plain object with local Philippine date/time parts
+  const now = new Date();
+  // Offset Philippines: UTC+8
+  const phOffset = 8 * 60; // minutes
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+  const phMs = utcMs + phOffset * 60000;
+  const ph = new Date(phMs);
+  return {
+    date: ph,
+    year: ph.getFullYear(),
+    month: ph.getMonth() + 1,
+    day: ph.getDate(),
+    dayOfWeek: ph.getDay(), // 0=Sun..6=Sat
+    fmt: () => {
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${ph.getFullYear()}-${pad(ph.getMonth() + 1)}-${pad(ph.getDate())}`;
+    },
+  };
+};
+
 const resolveDate = (dateStr) => {
   if (!dateStr) return null;
   const s = dateStr.toLowerCase().trim();
 
   const pad = (n) => String(n).padStart(2, "0");
-  const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-  const now = new Date();
+  // Work entirely in Philippine local time to avoid UTC midnight shift
+  const ph = nowPH();
+  const fmt = (d) => {
+    // d is a JS Date — interpret in PH timezone
+    const phOffset = 8 * 60;
+    const utcMs = d.getTime() + d.getTimezoneOffset() * 60000;
+    const phDate = new Date(utcMs + phOffset * 60000);
+    return `${phDate.getFullYear()}-${pad(phDate.getMonth() + 1)}-${pad(phDate.getDate())}`;
+  };
 
-  if (s === "today")    return fmt(now);
+  if (s === "today")    return ph.fmt();
   if (s === "tomorrow") {
-    const d = new Date(now); d.setDate(d.getDate() + 1); return fmt(d);
+    const d = new Date(ph.date); d.setDate(d.getDate() + 1); return fmt(d);
   }
   if (s === "next week") {
-    const d = new Date(now); d.setDate(d.getDate() + 7); return fmt(d);
+    const d = new Date(ph.date); d.setDate(d.getDate() + 7); return fmt(d);
   }
   if (s === "next monday") {
-    const d = new Date(now);
+    const d = new Date(ph.date);
     d.setDate(d.getDate() + ((1 + 7 - d.getDay()) % 7 || 7));
     return fmt(d);
   }
   if (s === "next friday") {
-    const d = new Date(now);
+    const d = new Date(ph.date);
     d.setDate(d.getDate() + ((5 + 7 - d.getDay()) % 7 || 7));
     return fmt(d);
   }
 
-  // Already in YYYY-MM-DD format
+  // Already in YYYY-MM-DD format — return as-is (already a local date string)
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
 
   // Try native Date parse as fallback (e.g. "March 30", "March 30 2025")
+  // Use PH-timezone interpretation
   const parsed = new Date(dateStr);
   if (!isNaN(parsed.getTime())) return fmt(parsed);
 
@@ -371,19 +401,35 @@ const resolveDate = (dateStr) => {
 };
 
 // ── Parse due date/time into Classroom API format ─────────────────
+// IMPORTANT: Google Classroom API interprets dueDate/dueTime as UTC.
+// Philippine time is UTC+8, so we subtract 8 hours from the intended
+// local deadline before passing it to the API.
+// e.g. "due today at 23:59 PH" → send dueDate for same day, dueTime 15:59 UTC
 const parseDue = (dateStr, timeStr = "23:59") => {
   const resolved = resolveDate(dateStr);
   if (!resolved) return {}; // no due date — don't set it
 
   const [year, month, day] = resolved.split("-").map(Number);
-  const [hours, minutes]   = (timeStr || "23:59").split(":").map(Number);
+  const [localHours, localMinutes] = (timeStr || "23:59").split(":").map(Number);
 
   // Validate all parts are real numbers
   if (!year || !month || !day) return {};
 
+  // Convert Philippine local time to UTC for the Classroom API
+  // PH = UTC+8, so UTC = local - 8h
+  const phDeadline = new Date(Date.UTC(year, month - 1, day, (localHours || 23), (localMinutes || 59)));
+  const utcDeadline = new Date(phDeadline.getTime() - 8 * 60 * 60 * 1000);
+
   return {
-    dueDate: { year, month, day },
-    dueTime: { hours: hours || 23, minutes: minutes || 59 },
+    dueDate: {
+      year:  utcDeadline.getUTCFullYear(),
+      month: utcDeadline.getUTCMonth() + 1,
+      day:   utcDeadline.getUTCDate(),
+    },
+    dueTime: {
+      hours:   utcDeadline.getUTCHours(),
+      minutes: utcDeadline.getUTCMinutes(),
+    },
   };
 };
 
