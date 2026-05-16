@@ -161,7 +161,41 @@ router.get("/dashboard", authenticateToken, async (req, res) => {
         urgentAlerts: deadlines.filter((d) => new Date(d.dueDate) < now).length,
         totalCourses: courses.length,
       },
-      recentAnnouncements: announcements.slice(0, 5),
+      // Merge local priority announcements (stored in Supabase) with Google Classroom ones
+      // so the dashboard always matches what the Announcements page shows.
+      recentAnnouncements: await (async () => {
+        try {
+          const courseIds = courses.map(c => c.id);
+          if (!courseIds.length) return announcements.slice(0, 5);
+          const { data: localAnn } = await supabase
+            .from("local_announcements")
+            .select("*, poster:posted_by(id, name, email, picture)")
+            .in("class_id", courseIds)
+            .order("created_at", { ascending: false })
+            .limit(10);
+
+          const localMapped = (localAnn || []).map(a => ({
+            id:          `local-${a.id}`,
+            type:        "ANNOUNCEMENT",
+            text:        a.text,
+            priority:    a.priority,
+            courseId:    a.class_id,
+            courseName:  a.class_name,
+            updateTime:  a.created_at,
+            isLocal:     true,
+          }));
+
+          // Merge: local urgent first, then by date
+          const merged = [...localMapped, ...announcements].sort((a, b) => {
+            if (a.priority === "urgent" && b.priority !== "urgent") return -1;
+            if (b.priority === "urgent" && a.priority !== "urgent") return  1;
+            return new Date(b.updateTime || 0) - new Date(a.updateTime || 0);
+          });
+          return merged.slice(0, 5);
+        } catch {
+          return announcements.slice(0, 5);
+        }
+      })(),
       upcomingDeadlines: deadlines.slice(0, 5),
       courses,
     };

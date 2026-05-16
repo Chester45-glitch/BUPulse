@@ -76,23 +76,36 @@ router.get("/google/callback", async (req, res) => {
     const { data: profile } = await oauth2.userinfo.get();
     const role = await detectRole(tokens.access_token, tokens.refresh_token, requestedRole);
 
+    // First upsert the core user fields
     const { data: user, error } = await supabase
       .from("users")
       .upsert({
-        google_id: profile.id,
-        email: profile.email,
-        name: profile.name,
-        picture: profile.picture,
-        access_token: tokens.access_token,
+        google_id:     profile.id,
+        email:         profile.email,
+        name:          profile.name,
+        picture:       profile.picture,
+        access_token:  tokens.access_token,
         refresh_token: tokens.refresh_token || null,
         role,
-        deleted_at: null,
-        updated_at: new Date().toISOString(),
+        deleted_at:    null,
+        updated_at:    new Date().toISOString(),
       }, { onConflict: "google_id" })
       .select()
       .single();
 
     if (error) throw error;
+
+    // ROLE SWITCH FIX: Supabase upsert sometimes does not update existing rows
+    // when only some columns conflict. Force-update the role if it differs.
+    if (user && user.role !== role) {
+      const { data: updated } = await supabase
+        .from("users")
+        .update({ role, updated_at: new Date().toISOString() })
+        .eq("id", user.id)
+        .select()
+        .single();
+      if (updated) Object.assign(user, updated);
+    }
 
     if (user.deleted_at) {
       const errUrl = mobileRedirect

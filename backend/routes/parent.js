@@ -164,20 +164,18 @@ router.delete("/students/:linkId", authenticateToken, parentOnly, async (req, re
 
 // ── GET /api/parent/student/:studentId/attendance ─────────────────
 // Returns all class_attendance records visible to the linked student.
-// Parent must have an active link to this student.
 router.get("/student/:studentId/attendance", authenticateToken, parentOnly, async (req, res) => {
   try {
-    const parentId   = req.user.id;
-    const studentId  = req.params.studentId;
+    const parentId  = req.user.id;
+    const studentId = req.params.studentId;
 
-    // Verify the parent-student link
+    // Verify the parent-student link using the correct table: parent_links
     const { data: link } = await supabase
-      .from("parent_student_links")
+      .from("parent_links")          // ← correct table name
       .select("id")
       .eq("parent_id", parentId)
       .eq("student_id", studentId)
-      .eq("status", "active")
-      .single();
+      .single();                      // ← no status filter; parent_links has no status column
 
     if (!link) return res.status(403).json({ error: "Not linked to this student" });
 
@@ -188,16 +186,41 @@ router.get("/student/:studentId/attendance", authenticateToken, parentOnly, asyn
       .eq("user_id", studentId);
 
     const classIds = (userCourses || []).map(r => r.course_id);
-    if (!classIds.length) return res.json({ records: [] });
 
-    // Fetch attendance records for those classes
+    // If no cached courses yet, try a fresh sync using student's tokens
+    if (!classIds.length) {
+      const { data: studentRow } = await supabase
+        .from("users")
+        .select("access_token, refresh_token, role")
+        .eq("id", studentId)
+        .single();
+
+      if (studentRow?.access_token) {
+        const { syncUserCourses } = require("../services/userCourseSync");
+        const freshIds = await syncUserCourses(
+          studentId,
+          studentRow.access_token,
+          studentRow.refresh_token,
+          studentRow.role || "student"
+        ).catch(() => []);
+
+        if (!freshIds.length) return res.json({ records: [] });
+
+        const { data: records, error } = await supabase
+          .from("class_attendance")
+          .select("*, poster:posted_by(id, name, email, picture, role), verifier:verified_by(id, name, email, picture)")
+          .in("class_id", freshIds)
+          .order("created_at", { ascending: false })
+          .limit(100);
+        if (error) throw error;
+        return res.json({ records: records || [] });
+      }
+      return res.json({ records: [] });
+    }
+
     const { data: records, error } = await supabase
       .from("class_attendance")
-      .select(`
-        *,
-        poster:posted_by(id, name, email, picture, role),
-        verifier:verified_by(id, name, email, picture)
-      `)
+      .select("*, poster:posted_by(id, name, email, picture, role), verifier:verified_by(id, name, email, picture)")
       .in("class_id", classIds)
       .order("created_at", { ascending: false })
       .limit(100);
