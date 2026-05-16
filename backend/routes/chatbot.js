@@ -80,11 +80,20 @@ const buildSystemPrompt = (role, classroomContext) => `You are PulsBot, a friend
 Your role: ${role === "professor"
   ? "Help professors manage classes, create assignments, quizzes, and post announcements."
   : role === "parent"
-  ? "Help parents monitor their child's academic progress, deadlines, and announcements."
+  ? "Help parents monitor their linked children's academic progress, attendance, deadlines, and announcements. When parents ask about 'my child', 'my son', 'my daughter', or a student's name, look in the linked student data provided in context to answer accurately. You can reference each student by name. Support questions about multiple students."
   : "Help students track assignments, deadlines, and class announcements."
 }
 
 Personality: Friendly, warm, occasionally uses Filipino phrases like "Kaya mo yan!" Use emojis sparingly.
+
+${role === "parent" ? `
+PARENT CONTEXT RULES:
+- The linked students and their data are listed below in this prompt.
+- When a parent asks about a specific student by name, match to the correct student.
+- When asking "who has absences", check all students' attendance data.
+- Always refer to students by first name for warmth.
+- If a student has no data, explain they need to log into BUPulse first.
+` : ""}
 
 ${role === "professor" ? `
 PROFESSOR ACTIONS — emit these JSON blocks ONLY after the professor confirms.
@@ -131,13 +140,82 @@ ${classroomContext}`;
 
 // ── Classroom context ─────────────────────────────────────────────
 const getClassroomContext = async (user) => {
-  if (!user.access_token) return "";
+  if (!user.access_token && user.role !== "parent") return "";
+  const now = new Date();
+
   try {
-    const now = new Date();
+    // ── Professor ──────────────────────────────────────────────────
     if (user.role === "professor") {
       const courses = await getTaughtCourses(user.access_token, user.refresh_token);
       return `\n\n---\n## Your Classes (use these IDs in actions):\n${courses.map((c) => `- [ID: ${c.id}] ${c.name}${c.section ? ` (${c.section})` : ""}`).join("\n")}`;
     }
+
+    // ── Parent — build rich context for all linked students ────────
+    if (user.role === "parent") {
+      const { data: links } = await supabase
+        .from("parent_student_links")
+        .select("student_id, students:student_id(id, name, email)")
+        .eq("parent_id", user.id)
+        .eq("status", "active");
+
+      if (!links?.length) return "\n\n---\n## Linked Students:\nNo students linked yet.";
+
+      const lines = ["\n\n---\n## Linked Students (your children monitored in BUPulse):"];
+
+      for (const link of links) {
+        const student = link.students;
+        if (!student) continue;
+        lines.push(`\n### ${student.name} (${student.email})`);
+
+        // Get student's Google tokens
+        const { data: studentRow } = await supabase
+          .from("users")
+          .select("access_token, refresh_token")
+          .eq("id", student.id)
+          .single();
+
+        if (!studentRow?.access_token) {
+          lines.push("  Status: Not yet logged into BUPulse");
+          continue;
+        }
+
+        try {
+          const [deadlines, courses, attendance] = await Promise.all([
+            getAllDeadlines(studentRow.access_token, studentRow.refresh_token).catch(() => []),
+            getCourses(studentRow.access_token, studentRow.refresh_token).catch(() => []),
+            supabase.from("user_courses").select("course_id").eq("user_id", student.id)
+              .then(r => r.data?.map(c => c.course_id) || []),
+          ]);
+
+          const overdue  = deadlines.filter(d => new Date(d.dueDate) < now).slice(0, 5);
+          const upcoming = deadlines.filter(d => new Date(d.dueDate) > now && new Date(d.dueDate) - now <= 7*86400000).slice(0, 5);
+
+          // Get attendance summary
+          const { data: attRecords } = await supabase
+            .from("class_attendance")
+            .select("names, class_name, record_date")
+            .in("class_id", attendance.length ? attendance : ["_"])
+            .order("record_date", { ascending: false })
+            .limit(20);
+
+          const totalPresent = (attRecords || []).reduce((s, r) =>
+            s + (r.names || []).filter(n => n.status === "present").length, 0);
+          const totalAbsent  = (attRecords || []).reduce((s, r) =>
+            s + (r.names || []).filter(n => n.status === "absent").length, 0);
+
+          lines.push(`  Courses: ${courses.map(c => c.name).join(", ") || "None"}`);
+          lines.push(`  Overdue (${overdue.length}): ${overdue.map(d => `"${d.title}" [${d.courseName}]`).join("; ") || "None"}`);
+          lines.push(`  Upcoming (${upcoming.length}): ${upcoming.map(d => `"${d.title}" in ${Math.ceil((new Date(d.dueDate)-now)/86400000)}d`).join("; ") || "None"}`);
+          lines.push(`  Attendance (last 20 sessions): ${totalPresent} present, ${totalAbsent} absent`);
+        } catch {
+          lines.push("  (Could not load student data — they may need to re-login)");
+        }
+      }
+
+      return lines.join("\n");
+    }
+
+    // ── Student ────────────────────────────────────────────────────
     const [deadlines, announcements, courses] = await Promise.all([
       getAllDeadlines(user.access_token, user.refresh_token),
       getAllAnnouncements(user.access_token, user.refresh_token),

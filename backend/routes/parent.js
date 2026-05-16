@@ -161,4 +161,53 @@ router.delete("/students/:linkId", authenticateToken, parentOnly, async (req, re
   }
 });
 
+
+// ── GET /api/parent/student/:studentId/attendance ─────────────────
+// Returns all class_attendance records visible to the linked student.
+// Parent must have an active link to this student.
+router.get("/student/:studentId/attendance", authenticateToken, parentOnly, async (req, res) => {
+  try {
+    const parentId   = req.user.id;
+    const studentId  = req.params.studentId;
+
+    // Verify the parent-student link
+    const { data: link } = await supabase
+      .from("parent_student_links")
+      .select("id")
+      .eq("parent_id", parentId)
+      .eq("student_id", studentId)
+      .eq("status", "active")
+      .single();
+
+    if (!link) return res.status(403).json({ error: "Not linked to this student" });
+
+    // Get the student's enrolled class IDs from user_courses
+    const { data: userCourses } = await supabase
+      .from("user_courses")
+      .select("course_id")
+      .eq("user_id", studentId);
+
+    const classIds = (userCourses || []).map(r => r.course_id);
+    if (!classIds.length) return res.json({ records: [] });
+
+    // Fetch attendance records for those classes
+    const { data: records, error } = await supabase
+      .from("class_attendance")
+      .select(`
+        *,
+        poster:posted_by(id, name, email, picture, role),
+        verifier:verified_by(id, name, email, picture)
+      `)
+      .in("class_id", classIds)
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    if (error) throw error;
+    res.json({ records: records || [] });
+  } catch (err) {
+    console.error("[parent] attendance error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
