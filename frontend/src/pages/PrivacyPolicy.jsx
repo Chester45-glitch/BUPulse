@@ -71,7 +71,7 @@ const PrivacyPolicy = () => {
         <section>
           <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '16px', color: 'var(--text-primary)' }}>4. Contact Us</h2>
           <p style={{ lineHeight: '1.7', color: 'var(--text-secondary)' }}>
-            If you have any questions about this Privacy Policy, please contact us at support@bupulse.edu.ph.
+            If you have any questions about this Privacy Policy, please contact us at csb2023-7560-41163@bicol-u.edu.ph.
           </p>
         </section>
       </div>
