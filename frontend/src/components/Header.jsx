@@ -91,6 +91,33 @@ export default function Header({ onMenuClick, role = "student" }) {
 
       {/* Right side */}
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {/* Get the Mobile App */}
+        <a
+          href="https://github.com/Chester45-glitch/BUPulse/releases/latest/download/bupulse.apk"
+          download="BUPulse.apk"
+          title="Get the Mobile App"
+          className="get-app-btn"
+          style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "0 12px", height: 34, borderRadius: 8,
+            border: "1px solid rgba(22,163,74,0.35)",
+            background: "rgba(22,163,74,0.07)", color: "#15803d",
+            fontSize: 12.5, fontWeight: 600, textDecoration: "none",
+            whiteSpace: "nowrap", cursor: "pointer", transition: "all 0.15s",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = "rgba(22,163,74,0.14)"; e.currentTarget.style.borderColor = "#16a34a"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "rgba(22,163,74,0.07)"; e.currentTarget.style.borderColor = "rgba(22,163,74,0.35)"; }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+            <line x1="12" y1="18" x2="12.01" y2="18"/>
+          </svg>
+          <span className="get-app-label">Get the App</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 3v13M5 14l7 7 7-7"/>
+          </svg>
+        </a>
+
         {/* Dark mode toggle */}
         <button onClick={toggle} style={{
           width: 34, height: 34, borderRadius: 8,
@@ -193,6 +220,8 @@ export default function Header({ onMenuClick, role = "student" }) {
           .mobile-logo { display: flex !important; }
           .page-title { display: none !important; }
           .user-name { display: none !important; }
+          .get-app-label { display: none !important; }
+          .get-app-btn { padding: 0 8px !important; }
         }
       `}</style>
     </header>
