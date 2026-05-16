@@ -103,10 +103,35 @@ export default function Login() {
         </div>
 
         {/* Footer — FIXED: Bicol University Polangui */}
-        <div style={{ position: "relative", padding: "16px 52px", borderTop: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ color: "rgba(255,255,255,0.27)", fontSize: 12 }}>Bicol University Polangui</span>
-          <span style={{ color: "rgba(255,255,255,0.15)", fontSize: 12 }}>·</span>
-          <span style={{ color: "rgba(255,255,255,0.27)", fontSize: 12 }}>Academic Platform</span>
+        <div style={{ position: "relative", padding: "16px 52px", borderTop: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: "rgba(255,255,255,0.27)", fontSize: 12 }}>Bicol University Polangui</span>
+            <span style={{ color: "rgba(255,255,255,0.15)", fontSize: 12 }}>·</span>
+            <span style={{ color: "rgba(255,255,255,0.27)", fontSize: 12 }}>Academic Platform</span>
+          </div>
+          <a
+            href="https://github.com/Chester45-glitch/BUPulse/releases/latest/download/bupulse.apk"
+            download="BUPulse.apk"
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "6px 12px", borderRadius: 8,
+              border: "1px solid rgba(255,255,255,0.15)",
+              background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.65)",
+              fontSize: 12, fontWeight: 600, textDecoration: "none",
+              whiteSpace: "nowrap", transition: "all 0.15s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)"; e.currentTarget.style.color = "#fff"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"; e.currentTarget.style.color = "rgba(255,255,255,0.65)"; }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+              <line x1="12" y1="18" x2="12.01" y2="18"/>
+            </svg>
+            Get the Mobile App
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 3v13M5 14l7 7 7-7"/>
+            </svg>
+          </a>
         </div>
       </div>
 
@@ -191,7 +216,7 @@ export default function Login() {
 
           {/* Get the Mobile App */}
           <a
-            href="https://github.com/Chester45-glitch/BUPulse/releases/latest/download/bupulse.apk"
+            href="/downloads/bupulse.apk"
             download="BUPulse.apk"
             style={{
               width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
