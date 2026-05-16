@@ -189,6 +189,33 @@ export default function Login() {
             {loading ? "Redirecting…" : "Continue with Google"}
           </button>
 
+          {/* Get the Mobile App */}
+          <a
+            href="https://github.com/Chester45-glitch/BUPulse/releases/latest/download/bupulse.apk"
+            download="BUPulse.apk"
+            style={{
+              width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+              gap: 10, padding: "13px 20px", borderRadius: 12,
+              border: "1.5px solid rgba(22,163,74,0.35)",
+              background: "rgba(22,163,74,0.06)", color: "#15803d",
+              fontSize: 14.5, fontWeight: 600, cursor: "pointer",
+              transition: "all 0.17s", fontFamily: "var(--font-body)",
+              textDecoration: "none", marginBottom: 14,
+              boxShadow: "0 1px 4px rgba(22,163,74,0.08)",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = "rgba(22,163,74,0.12)"; e.currentTarget.style.borderColor = "#16a34a"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "rgba(22,163,74,0.06)"; e.currentTarget.style.borderColor = "rgba(22,163,74,0.35)"; e.currentTarget.style.transform = "none"; }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+              <line x1="12" y1="18" x2="12.01" y2="18"/>
+            </svg>
+            Get the Mobile App
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 2 }}>
+              <path d="M12 3v13M5 14l7 7 7-7"/>
+            </svg>
+          </a>
+
           {/* Security note */}
           <div style={{ display: "flex", alignItems: "flex-start", gap: 7, background: "rgba(22,163,74,0.06)", border: "1px solid rgba(22,163,74,0.2)", borderRadius: 10, padding: "11px 14px", color: "rgba(22,163,74,0.85)", fontSize: 12.5, lineHeight: 1.55, marginBottom: 24 }}>
             <svg style={{ flexShrink: 0, marginTop: 1 }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
