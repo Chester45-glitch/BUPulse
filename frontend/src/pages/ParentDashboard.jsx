@@ -1,3 +1,4 @@
+import { sanitizeAnnouncement } from "../utils/sanitizeHtml";
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import api from "../utils/api";
@@ -23,6 +24,9 @@ export default function ParentDashboard() {
   const [linkSuccess, setLinkSuccess] = useState("");
   const [activeTab, setActiveTab] = useState("deadlines");
   const [dataError, setDataError] = useState("");
+  const [attendance, setAttendance] = useState([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceFilter, setAttendanceFilter] = useState("all");
 
   const loadStudents = async () => {
     setLoadingStudents(true);
@@ -53,6 +57,13 @@ export default function ParentDashboard() {
       .then(r => setStudentData(r.data))
       .catch(err => setDataError(err.response?.data?.error || "Failed to load student data"))
       .finally(() => setLoadingData(false));
+
+    // Load attendance for linked student
+    setAttendanceLoading(true);
+    api.get(`/parent/student/${selectedStudent.id}/attendance`)
+      .then(r => setAttendance(r.data.records || []))
+      .catch(() => setAttendance([]))
+      .finally(() => setAttendanceLoading(false));
   }, [selectedStudent]);
 
   const handleLink = async (e) => {
@@ -216,7 +227,7 @@ export default function ParentDashboard() {
 
                   {/* Tabs */}
                   <div style={{ display: "flex", gap: 4, marginBottom: 16, background: "var(--bg-tertiary)", borderRadius: 10, padding: 4 }}>
-                    {[["deadlines", "📋 Deadlines"], ["announcements", "📢 Announcements"], ["courses", "📚 Courses"]].map(([tab, label]) => (
+                    {[["deadlines", "📋 Deadlines"], ["attendance", "✅ Attendance"], ["announcements", "📢 Announcements"], ["courses", "📚 Courses"]].map(([tab, label]) => (
                       <button key={tab} onClick={() => setActiveTab(tab)} style={{
                         flex: 1, padding: "8px 10px", borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: "pointer",
                         background: activeTab === tab ? "var(--card-bg)" : "transparent",
@@ -279,12 +290,116 @@ export default function ParentDashboard() {
                         : announcements.map((ann, i) => (
                           <div key={i} style={{ background: "var(--card-bg)", borderRadius: 10, border: "1px solid var(--card-border)", padding: "12px 14px" }}>
                             <div style={{ fontSize: 12, fontWeight: 600, color: "#3730a3", marginBottom: 4 }}>{ann.courseName}</div>
-                            <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5 }}>{ann.text}</div>
+                            <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5, whiteSpace:"pre-line" }}>{sanitizeAnnouncement(ann.text || "")}</div>
                           </div>
                         ))
                       }
                     </div>
                   )}
+
+                  {/* Attendance tab */}
+                  {activeTab === "attendance" && (() => {
+                    const statusCfg = {
+                      present: { bg:"#dcfce7", color:"#16a34a", label:"Present" },
+                      absent:  { bg:"#fee2e2", color:"#dc2626", label:"Absent"  },
+                      late:    { bg:"#fef9c3", color:"#ca8a04", label:"Late"    },
+                    };
+                    const uniqueClasses = [...new Set(attendance.map(r => r.class_id))];
+                    const filtered = attendanceFilter === "all"
+                      ? attendance
+                      : attendance.filter(r => r.class_id === attendanceFilter);
+
+                    return (
+                      <div>
+                        {attendanceLoading ? (
+                          <div style={{ textAlign:"center", padding:32, color:"var(--text-muted)" }}>Loading attendance…</div>
+                        ) : attendance.length === 0 ? (
+                          <div style={{ textAlign:"center", padding:32, color:"var(--text-muted)" }}>
+                            <div style={{ fontSize:36, marginBottom:10 }}>📋</div>
+                            <p style={{ fontSize:14 }}>No attendance records found for this student.</p>
+                          </div>
+                        ) : (
+                          <>
+                            {/* Class filter pills */}
+                            {uniqueClasses.length > 1 && (
+                              <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:14 }}>
+                                {["all", ...uniqueClasses].map(id => {
+                                  const name = id === "all" ? "All Classes" : attendance.find(r=>r.class_id===id)?.class_name || id;
+                                  const active = attendanceFilter === id;
+                                  return (
+                                    <button key={id} onClick={() => setAttendanceFilter(id)}
+                                      style={{ padding:"4px 12px", borderRadius:99, fontSize:12, fontWeight:active?600:400,
+                                        border:`1.5px solid ${active?"#3730a3":"var(--border-color)"}`,
+                                        background:active?"rgba(55,48,163,0.1)":"transparent",
+                                        color:active?"#3730a3":"var(--text-muted)", cursor:"pointer" }}>
+                                      {name.length > 24 ? name.slice(0,24)+"…" : name}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Summary stats */}
+                            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
+                              {["present","absent","late"].map(s => {
+                                const count = filtered.reduce((acc,r) => acc + (r.names||[]).filter(n=>n.status===s).length, 0);
+                                const cfg = statusCfg[s];
+                                return (
+                                  <div key={s} style={{ background:cfg.bg, borderRadius:10, padding:"10px 14px", textAlign:"center" }}>
+                                    <div style={{ fontSize:22, fontWeight:700, color:cfg.color }}>{count}</div>
+                                    <div style={{ fontSize:11, color:cfg.color, fontWeight:600 }}>{cfg.label}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Records list */}
+                            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                              {filtered.map((record,i) => {
+                                const isVerified = record.is_verified === true;
+                                const studentNames = record.names || [];
+                                return (
+                                  <div key={record.id||i} style={{ background:"var(--card-bg)", borderRadius:10,
+                                    border:`1px solid ${isVerified?"rgba(22,163,74,0.35)":"var(--card-border)"}`,
+                                    overflow:"hidden" }}>
+                                    {isVerified && (
+                                      <div style={{ background:"rgba(22,163,74,0.08)", padding:"4px 12px", fontSize:11, color:"#16a34a", fontWeight:700, display:"flex", alignItems:"center", gap:5 }}>
+                                        ✅ Verified {record.verifier?.name ? `by ${record.verifier.name}` : ""}
+                                      </div>
+                                    )}
+                                    <div style={{ padding:"12px 14px" }}>
+                                      <div style={{ display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:6, marginBottom:8 }}>
+                                        <div>
+                                          <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)" }}>{record.class_name}</div>
+                                          <div style={{ fontSize:11.5, color:"var(--text-muted)" }}>
+                                            {record.record_date ? new Date(record.record_date).toLocaleDateString("en-PH",{weekday:"short",month:"short",day:"numeric",year:"numeric"}) : ""}
+                                            {record.session_label ? ` · ${record.session_label}` : ""}
+                                          </div>
+                                        </div>
+                                        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                                          {["present","absent","late"].map(s => {
+                                            const c = studentNames.filter(n=>n.status===s).length;
+                                            if (!c) return null;
+                                            const cfg = statusCfg[s];
+                                            return <span key={s} style={{ padding:"2px 8px", borderRadius:99, background:cfg.bg, color:cfg.color, fontSize:11, fontWeight:600 }}>{c} {cfg.label}</span>;
+                                          })}
+                                        </div>
+                                      </div>
+                                      {record.poster && (
+                                        <div style={{ fontSize:11.5, color:"var(--text-faint)" }}>
+                                          Posted by {record.poster.name || "Unknown"}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Courses tab */}
                   {activeTab === "courses" && (

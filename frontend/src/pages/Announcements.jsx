@@ -1,3 +1,4 @@
+import { sanitizeAnnouncement } from "../utils/sanitizeHtml";
 import { useState, useEffect, useRef } from "react";
 import api from "../utils/api";
 
@@ -73,7 +74,7 @@ function StreamCard({ item, index }) {
   const cfg = TYPE_CFG[item.type] || TYPE_CFG.ANNOUNCEMENT;
   const color = courseColor(item.courseName || "");
   const PREVIEW = 220;
-  const text = item.text || "";
+  const text = sanitizeAnnouncement(item.text || "");
   const needsMore = text.length > PREVIEW;
   const displayText = expanded || !needsMore ? text : text.slice(0, PREVIEW) + "…";
 
@@ -441,7 +442,7 @@ export default function Announcements({ role }) {
                 This will permanently delete the announcement from Google Classroom. This cannot be undone.
               </p>
               <div style={{ background: "var(--bg-tertiary)", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: 13, color: "var(--text-secondary)", fontStyle: "italic", lineHeight: 1.5 }}>
-                "{deleteModal.item.text?.slice(0, 120)}{deleteModal.item.text?.length > 120 ? "…" : ""}"
+                "{sanitizeAnnouncement(deleteModal.item.text || "").slice(0, 120)}{sanitizeAnnouncement(deleteModal.item.text || "").length > 120 ? "…" : ""}"
               </div>
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <button onClick={() => setDeleteModal(null)} style={{ padding: "9px 18px", borderRadius: 9, border: "1px solid var(--card-border)", background: "transparent", color: "var(--text-muted)", fontSize: 13.5, cursor: "pointer" }}>

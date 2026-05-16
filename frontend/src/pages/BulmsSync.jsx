@@ -1,4 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
+
+// ── Clean course code prefixes from subject names ─────────────────
+// "CS 104B - Data Structure and Algorithm" → "Data Structure and Algorithm"
+const cleanSubjectName = (name = "") => {
+  const cleaned = name.replace(/^[A-Z]{2,6}\s?\d+[A-Z]?\s*[-\u2013\u2014]\s*/i, "").trim();
+  return cleaned || name;
+};
+
 import api from "../utils/api";
 
 // ── Styles ────────────────────────────────────────────────────────────────────
