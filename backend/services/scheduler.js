@@ -10,6 +10,7 @@ const {
   announcementTemplate,
   logNotification,
   wasRecentlySent,
+  sendSystemEmail,
 } = require("./gmail");
 
 // ══════════════════════════════════════════════════════════════════
@@ -283,8 +284,7 @@ const sendDueActivityReminders = async () => {
 
   if (!users?.length) return;
 
-  const { getAllDeadlines } = require("./googleClassroom");
-  const { sendEmail }       = require("./gmail");
+  // getAllDeadlines already imported at top of file
   let reminded = 0;
 
   for (const user of users) {
@@ -320,14 +320,24 @@ const sendDueActivityReminders = async () => {
         return `• ${d.title} (${d.courseName}) — due in ${h}h`;
       }).join("\n");
 
-      await sendEmail({
-        to:      user.email,
-        subject: `⏰ ${toRemind.length} activit${toRemind.length===1?"y":"ies"} due within 24 hours`,
-        html: `<p>Hi ${user.name?.split(" ")[0] || "there"},</p>
-<p>You have activities due very soon:</p>
-<pre style="font-family:monospace;background:#f5f5f5;padding:12px;border-radius:8px">${hoursStr}</pre>
-<p>Log in to <a href="${process.env.FRONTEND_URL}">BUPulse</a> to submit on time.</p>`,
-      });
+      await sendSystemEmail(
+        user.email,
+        `⏰ ${toRemind.length} activit${toRemind.length===1?"y":"ies"} due within 24 hours`,
+        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
+          <div style="background:#f59e0b;color:#fff;padding:14px 20px;border-radius:12px 12px 0 0">
+            <h2 style="margin:0">⏰ Upcoming Deadlines</h2>
+          </div>
+          <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;padding:20px;border-radius:0 0 12px 12px">
+            <p>Hi <strong>${user.name?.split(" ")[0] || "there"}</strong>,</p>
+            <p>You have <strong>${toRemind.length} activit${toRemind.length===1?"y":"ies"}</strong> due within 24 hours:</p>
+            <div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:14px;margin:14px 0">
+              <pre style="font-family:monospace;margin:0;white-space:pre-wrap;font-size:14px;color:#1e293b">${hoursStr}</pre>
+            </div>
+            <p>Log in to <a href="${process.env.FRONTEND_URL}" style="color:#f59e0b;font-weight:700">BUPulse</a> to submit on time.</p>
+            <p style="color:#94a3b8;font-size:11px;margin-top:20px">You will receive this reminder every hour until the activity is submitted or the deadline passes.</p>
+          </div>
+        </div>`
+      );
 
       // Log each reminder so we don't re-send within 55 min
       const logRows = toRemind.map(d => ({
