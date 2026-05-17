@@ -201,37 +201,66 @@ const getClassroomContext = async (user) => {
     if (user.role === "professor") {
       const courses = await getTaughtCourses(user.access_token, user.refresh_token).catch(() => []);
 
-      // Fetch students + submissions + attendance for each course in parallel
-      const courseDetails = await Promise.all(courses.map(async (c) => {
-        const [students, submissions, attRows] = await Promise.all([
-          getCourseStudents(c.id, user.access_token, user.refresh_token).catch(() => []),
-          getProfessorSubmissionSummary(c.id, user.access_token, user.refresh_token).catch(() => []),
-          supabase.from("class_attendance")
-            .select("id, record_date, session_label, names, is_verified, posted_by")
-            .eq("class_id", c.id)
-            .order("record_date", { ascending: false })
-            .limit(5)
-            .then(r => r.data || [])
-            .catch(() => []),
-        ]);
+      // Process courses sequentially (not all-parallel) to avoid Google API rate limits.
+      // Cap at 5 courses max for context size.
+      const courseDetails = [];
+      for (const c of courses.slice(0, 5)) {
+        try {
+          // Fetch students and attendance in parallel; submissions separately (heavier call)
+          const [students, attRows] = await Promise.all([
+            getCourseStudents(c.id, user.access_token, user.refresh_token).catch(() => []),
+            supabase.from("class_attendance")
+              .select("record_date, session_label, names, is_verified")
+              .eq("class_id", c.id)
+              .order("record_date", { ascending: false })
+              .limit(5)
+              .then(r => r.data || [])
+              .catch(() => []),
+          ]);
 
-        const studentNames = students.map(s => s.profile?.name?.fullName || s.userId).filter(Boolean);
+          // Submissions separately — can fail gracefully
+          const submissions = await getProfessorSubmissionSummary(
+            c.id, user.access_token, user.refresh_token
+          ).catch(() => []);
 
-        const submissionLines = submissions.map(w => {
-          const pct = w.totalStudents > 0 ? Math.round((w.submittedCount / w.totalStudents) * 100) : 0;
-          return `    • "${w.title}" [${w.workType}] due ${w.dueDate}: ${w.submittedCount}/${w.totalStudents} submitted (${pct}%)`;
-        });
+          const studentNames = students
+            .map(s => s.profile?.name?.fullName || null)
+            .filter(Boolean);
 
-        const attLines = attRows.map(r => {
-          const present = (r.names||[]).filter(n=>n.status==="present"||(!n.status&&n.name)).length;
-          const absent  = (r.names||[]).filter(n=>n.status==="absent").length;
-          const late    = (r.names||[]).filter(n=>n.status==="late").length;
-          const verified = r.is_verified ? "✅ verified" : "⏳ unverified";
-          return `    • ${r.record_date}${r.session_label ? ` (${r.session_label})` : ""}: ${present} present, ${absent} absent, ${late} late [${verified}]`;
-        });
+          // Build submission lines — match notSubmittedIds to student names where possible
+          const studentIdToName = {};
+          students.forEach(s => {
+            if (s.userId && s.profile?.name?.fullName) {
+              studentIdToName[s.userId] = s.profile.name.fullName;
+            }
+          });
 
-        return { c, studentNames, submissionLines, attLines };
-      }));
+          const submissionLines = submissions.map(w => {
+            const pct = w.totalStudents > 0
+              ? Math.round((w.submittedCount / w.totalStudents) * 100) : 0;
+            const notSubNames = w.notSubmittedIds
+              .map(id => studentIdToName[id])
+              .filter(Boolean);
+            const notSubStr = notSubNames.length > 0
+              ? `Not submitted: ${notSubNames.join(", ")}`
+              : `${w.notSubmittedCount} not submitted`;
+            return `    • "${w.title}" [${w.workType}] due ${w.dueDate}: ${w.submittedCount}/${w.totalStudents} submitted (${pct}%) — ${notSubStr}`;
+          });
+
+          const attLines = attRows.map(r => {
+            const present = (r.names||[]).filter(n => n.status==="present" || (!n.status && n.name)).length;
+            const absent  = (r.names||[]).filter(n => n.status==="absent").length;
+            const late    = (r.names||[]).filter(n => n.status==="late").length;
+            const verified = r.is_verified ? "✅ verified" : "⏳ unverified";
+            return `    • ${r.record_date}${r.session_label ? ` (${r.session_label})` : ""}: ${present} present, ${absent} absent, ${late} late [${verified}]`;
+          });
+
+          courseDetails.push({ c, studentNames, submissionLines, attLines });
+        } catch (err) {
+          console.error(`[chatbot context] course ${c.id} error:`, err.message);
+          courseDetails.push({ c, studentNames: [], submissionLines: [], attLines: [] });
+        }
+      }
 
       // Professor's own schedule
       const { data: schedule } = await supabase
