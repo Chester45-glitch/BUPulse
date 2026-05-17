@@ -35,7 +35,7 @@ const supabase = require("../db/supabase");
 const { authenticateToken } = require("../middleware/auth");
 const { syncUserCourses, getClassIdsForUser, verifyUserInClass } = require("../services/userCourseSync");
 const { checkAbsences } = require("../services/absenceChecker");
-const { sendEmail }     = require("../services/gmail");
+const { sendSystemEmail } = require("../services/gmail");
 const Groq = require("groq-sdk");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 

@@ -11,7 +11,7 @@ const express = require("express");
 const router  = express.Router();
 const supabase = require("../db/supabase");
 const { authenticateToken } = require("../middleware/auth");
-const { sendEmail } = require("../services/gmail");
+const { sendSystemEmail } = require("../services/gmail");
 
 // Developer email — set this in your .env
 const DEVELOPER_EMAIL = process.env.DEVELOPER_EMAIL || "bupulse.dev@gmail.com";
@@ -51,7 +51,7 @@ router.post("/", authenticateToken, async (req, res) => {
     });
 
     // Send email to developer
-    if (userRow.access_token) {
+    {
       const catLabel = CATEGORY_LABELS[category] || "💬 Feedback";
       const roleLabel = { student:"Student", professor:"Professor", parent:"Parent" }[userRow.role] || userRow.role;
       const subject  = `[BUPulse Feedback] ${catLabel} from ${userRow.name}`;
@@ -77,13 +77,8 @@ router.post("/", authenticateToken, async (req, res) => {
   </div>
 </div>`;
 
-      await sendEmail(
-        userRow.access_token,
-        userRow.refresh_token,
-        DEVELOPER_EMAIL,
-        subject,
-        html
-      ).catch(e => console.error("[feedback] email error:", e.message));
+      await sendSystemEmail(DEVELOPER_EMAIL, subject, html)
+        .catch(e => console.error("[feedback] email error:", e.message));
     }
 
     res.json({ success: true, message: "Thank you for your feedback!" });

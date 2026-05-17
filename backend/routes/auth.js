@@ -49,6 +49,7 @@ router.get("/google", (req, res) => {
       "https://www.googleapis.com/auth/classroom.coursework.students",
       "https://www.googleapis.com/auth/drive.file",
       "https://www.googleapis.com/auth/forms.body",
+      "https://www.googleapis.com/auth/gmail.send",
     ],
     state,
   });
