@@ -147,8 +147,8 @@ export default function FloatingChatbot() {
             <div ref={bottomRef} />
           </div>
 
-          {/* Input */}
-          <div style={{ borderTop: "1px solid var(--card-border)", flexShrink: 0 }}>
+      {/* Input */}
+          <div style={{ borderTop: "1px solid var(--card-border)", flexShrink: 0, paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
             <ChatInput onSend={send} disabled={loading} compact={true} />
           </div>
         </div>
@@ -156,7 +156,7 @@ export default function FloatingChatbot() {
 
       {/* Floating button */}
       <button onClick={() => setOpen(o => !o)}
-        className="float-chat-btn"
+        className={`float-chat-btn${open ? " float-chat-btn--open" : ""}`}
         style={{
           position: "fixed", bottom: 24, right: 24, width: 56, height: 56,
           borderRadius: "50%", background: open ? "var(--bg-tertiary)" : "linear-gradient(135deg, var(--green-800), var(--green-600))",
@@ -191,12 +191,17 @@ export default function FloatingChatbot() {
             right: 0 !important;
             left: 0 !important;
             width: 100% !important;
-            height: 80vh !important;
+            height: 85vh !important;
             border-radius: 18px 18px 0 0 !important;
           }
           .float-chat-btn {
             bottom: 16px !important;
             right: 16px !important;
+          }
+          /* Hide the floating toggle button on mobile when chat is open —
+             the header's own close button handles dismissal */
+          .float-chat-btn--open {
+            display: none !important;
           }
         }
       `}</style>
