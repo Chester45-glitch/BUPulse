@@ -1,5 +1,6 @@
 const { google } = require("googleapis");
 
+// ── OAuth client factory ────────────────────────────────────────
 const createClient = (accessToken, refreshToken) => {
   const auth = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -10,6 +11,7 @@ const createClient = (accessToken, refreshToken) => {
   return google.classroom({ version: "v1", auth });
 };
 
+// ── Courses ─────────────────────────────────────────────────────
 const getCourses = async (accessToken, refreshToken) => {
   const classroom = createClient(accessToken, refreshToken);
   const res = await classroom.courses.list({ courseStates: ["ACTIVE"], pageSize: 20 });
@@ -19,7 +21,11 @@ const getCourses = async (accessToken, refreshToken) => {
 const getTaughtCourses = async (accessToken, refreshToken) => {
   try {
     const classroom = createClient(accessToken, refreshToken);
-    const res = await classroom.courses.list({ teacherId: "me", courseStates: ["ACTIVE"], pageSize: 20 });
+    const res = await classroom.courses.list({
+      teacherId: "me",
+      courseStates: ["ACTIVE"],
+      pageSize: 20,
+    });
     return res.data.courses || [];
   } catch (e) {
     console.error("getTaughtCourses error:", e.message);
@@ -27,63 +33,184 @@ const getTaughtCourses = async (accessToken, refreshToken) => {
   }
 };
 
-const getCourseWork = async (courseId, accessToken, refreshToken) => {
-  const classroom = createClient(accessToken, refreshToken);
-  const res = await classroom.courses.courseWork.list({
-    courseId, courseWorkStates: ["PUBLISHED"], pageSize: 30, orderBy: "dueDate asc",
-  });
-  return res.data.courseWork || [];
-};
-
-const getAnnouncementsForCourse = async (courseId, accessToken, refreshToken) => {
-  const classroom = createClient(accessToken, refreshToken);
-  const res = await classroom.courses.announcements.list({
-    courseId, announcementStates: ["PUBLISHED"], pageSize: 10, orderBy: "updateTime desc",
-  });
-  return res.data.announcements || [];
-};
-
-// ── Fetch primary teacher name for a course ──────────────────
+// ── Teacher name ────────────────────────────────────────────────
 const getCourseTeacherName = async (courseId, accessToken, refreshToken) => {
   try {
     const classroom = createClient(accessToken, refreshToken);
     const res = await classroom.courses.teachers.list({ courseId, pageSize: 5 });
     const teachers = res.data.teachers || [];
-    if (teachers.length === 0) return null;
-    // First teacher is typically the owner/primary instructor
-    return teachers[0].profile?.name?.fullName || null;
-  } catch (e) {
-    // If no roster permission, silently skip
+    return teachers[0]?.profile?.name?.fullName || null;
+  } catch {
     return null;
   }
 };
 
-// ── getAllAnnouncements (student) — includes teacher name ────
+// ── Course work (assignments) ───────────────────────────────────
+const getCourseWork = async (courseId, accessToken, refreshToken) => {
+  const classroom = createClient(accessToken, refreshToken);
+  const res = await classroom.courses.courseWork.list({
+    courseId,
+    courseWorkStates: ["PUBLISHED"],
+    pageSize: 30,
+    orderBy: "dueDate asc",
+  });
+  return res.data.courseWork || [];
+};
+
+// ── Announcements for a single course ──────────────────────────
+const getAnnouncementsForCourse = async (courseId, accessToken, refreshToken) => {
+  const classroom = createClient(accessToken, refreshToken);
+  const res = await classroom.courses.announcements.list({
+    courseId,
+    announcementStates: ["PUBLISHED"],
+    pageSize: 10,
+    orderBy: "updateTime desc",
+  });
+  return res.data.announcements || [];
+};
+
+// ── Materials (files, links, videos) ───────────────────────────
+const getCourseMaterials = async (courseId, accessToken, refreshToken) => {
+  try {
+    const classroom = createClient(accessToken, refreshToken);
+    const res = await classroom.courses.courseWorkMaterials.list({
+      courseId,
+      courseWorkMaterialStates: ["PUBLISHED"],
+      pageSize: 10,
+      orderBy: "updateTime desc",
+    });
+    return res.data.courseWorkMaterial || [];
+  } catch (e) {
+    // courseWorkMaterials may not be available on all courses/scopes
+    console.error(`Materials error for ${courseId}:`, e.message);
+    return [];
+  }
+};
+
+// ── Normalize attached materials from GC API ───────────────────
+const normalizeMaterials = (materials = []) =>
+  materials.map((m) => {
+    if (m.driveFile)
+      return { type: "drive", title: m.driveFile.driveFile?.title || "File", url: m.driveFile.driveFile?.alternateLink || "#" };
+    if (m.youtubeVideo)
+      return { type: "youtube", title: m.youtubeVideo.title || "Video", url: m.youtubeVideo.alternateLink || "#" };
+    if (m.link)
+      return { type: "link", title: m.link.title || m.link.url || "Link", url: m.link.url || "#" };
+    if (m.form)
+      return { type: "form", title: m.form.title || "Form", url: m.form.formUrl || "#" };
+    return null;
+  }).filter(Boolean);
+
+// ── Unified stream (announcements + materials + quizzes) ────────
+// Returns a normalized array sorted by most-recent-first.
+const getUnifiedStream = async (accessToken, refreshToken) => {
+  const courses = await getCourses(accessToken, refreshToken);
+
+  const results = await Promise.all(
+    courses.map(async (course) => {
+      try {
+        const [announcements, materials, coursework, teacherName] = await Promise.all([
+          getAnnouncementsForCourse(course.id, accessToken, refreshToken),
+          getCourseMaterials(course.id, accessToken, refreshToken),
+          getCourseWork(course.id, accessToken, refreshToken),
+          getCourseTeacherName(course.id, accessToken, refreshToken),
+        ]);
+
+        const base = { courseId: course.id, courseName: course.name, teacherName };
+
+        // ── Announcements ──
+        const announcementItems = announcements.map((a) => ({
+          ...base,
+          id: `ann-${a.id}`,
+          type: "ANNOUNCEMENT",
+          title: null,
+          text: a.text || "",
+          creationTime: a.creationTime,
+          updateTime: a.updateTime || a.creationTime,
+          link: a.alternateLink,
+          attachments: normalizeMaterials(a.materials || []),
+        }));
+
+        // ── Materials ──
+        const materialItems = materials.map((m) => ({
+          ...base,
+          id: `mat-${m.id}`,
+          type: "MATERIAL",
+          title: m.title || "Untitled Material",
+          text: m.description || "",
+          creationTime: m.creationTime,
+          updateTime: m.updateTime || m.creationTime,
+          link: m.alternateLink,
+          attachments: normalizeMaterials(m.materials || []),
+        }));
+
+        // ── Quizzes / Forms (coursework that has a form attachment or is MCQ/SA) ──
+        const quizItems = coursework
+          .filter((w) => {
+            const hasForm = (w.materials || []).some((m) => m.form);
+            const isQuestion =
+              w.workType === "SHORT_ANSWER_QUESTION" ||
+              w.workType === "MULTIPLE_CHOICE_QUESTION";
+            return hasForm || isQuestion;
+          })
+          .map((w) => ({
+            ...base,
+            id: `quiz-${w.id}`,
+            type: "QUIZ",
+            title: w.title || "Untitled Quiz",
+            text: w.description || "",
+            creationTime: w.creationTime,
+            updateTime: w.updateTime || w.creationTime,
+            link: w.alternateLink,
+            dueDate: w.dueDate
+              ? new Date(
+                  `${w.dueDate.year}-${String(w.dueDate.month).padStart(2, "0")}-${String(w.dueDate.day).padStart(2, "0")}`
+                ).toISOString()
+              : null,
+            attachments: normalizeMaterials(w.materials || []),
+          }));
+
+        return [...announcementItems, ...materialItems, ...quizItems];
+      } catch (e) {
+        console.error(`Stream error for ${course.id}:`, e.message);
+        return [];
+      }
+    })
+  );
+
+  return results
+    .flat()
+    .sort(
+      (a, b) =>
+        new Date(b.updateTime || b.creationTime) -
+        new Date(a.updateTime || a.creationTime)
+    );
+};
+
+// ── Student announcements (legacy – used by dashboard) ─────────
 const getAllAnnouncements = async (accessToken, refreshToken) => {
   const courses = await getCourses(accessToken, refreshToken);
   return getAllAnnouncementsForCourses(courses, accessToken, refreshToken);
 };
 
-// ── Shared: fetch announcements for given course list ────────
 const getAllAnnouncementsForCourses = async (courses, accessToken, refreshToken) => {
   const results = await Promise.all(
     courses.map(async (course) => {
       try {
-        // Fetch announcements and teacher name in parallel
         const [anns, teacherName] = await Promise.all([
           getAnnouncementsForCourse(course.id, accessToken, refreshToken),
           getCourseTeacherName(course.id, accessToken, refreshToken),
         ]);
-
-        return anns.map(a => ({
+        return anns.map((a) => ({
           courseId: course.id,
           courseName: course.name,
-          teacherName: teacherName || course.ownerId || null, // fallback
+          teacherName: teacherName || null,
           id: a.id,
           text: a.text,
           creationTime: a.creationTime,
           updateTime: a.updateTime,
           link: a.alternateLink,
+          attachments: normalizeMaterials(a.materials || []),
         }));
       } catch (e) {
         console.error(`Announcements error for ${course.id}:`, e.message);
@@ -91,27 +218,28 @@ const getAllAnnouncementsForCourses = async (courses, accessToken, refreshToken)
       }
     })
   );
-
   return results.flat().sort((a, b) => new Date(b.updateTime) - new Date(a.updateTime));
 };
 
-// ── Submission status check ──────────────────────────────────
+// ── Submission status ───────────────────────────────────────────
 const getSubmissionStatus = async (courseId, courseWorkId, accessToken, refreshToken) => {
   try {
     const classroom = createClient(accessToken, refreshToken);
     const res = await classroom.courses.courseWork.studentSubmissions.list({
-      courseId, courseWorkId, userId: "me",
+      courseId,
+      courseWorkId,
+      userId: "me",
     });
     const submissions = res.data.studentSubmissions || [];
-    if (submissions.length === 0) return "NOT_SUBMITTED";
+    if (!submissions.length) return "NOT_SUBMITTED";
     const state = submissions[0].state;
-    return (state === "TURNED_IN" || state === "RETURNED") ? "SUBMITTED" : "NOT_SUBMITTED";
-  } catch (e) {
+    return state === "TURNED_IN" || state === "RETURNED" ? "SUBMITTED" : "NOT_SUBMITTED";
+  } catch {
     return "UNKNOWN";
   }
 };
 
-// ── getAllDeadlines — only unsubmitted ───────────────────────
+// ── All deadlines (unsubmitted only) ───────────────────────────
 const getAllDeadlines = async (accessToken, refreshToken) => {
   const courses = await getCourses(accessToken, refreshToken);
 
@@ -119,30 +247,39 @@ const getAllDeadlines = async (accessToken, refreshToken) => {
     courses.map(async (course) => {
       try {
         const work = await getCourseWork(course.id, accessToken, refreshToken);
-        const withDates = work.filter(w => w.dueDate);
+        const withDates = work.filter((w) => w.dueDate);
 
         const withStatus = await Promise.all(
           withDates.map(async (w) => {
-            const submissionStatus = await getSubmissionStatus(course.id, w.id, accessToken, refreshToken);
+            const submissionStatus = await getSubmissionStatus(
+              course.id,
+              w.id,
+              accessToken,
+              refreshToken
+            );
             const d = w.dueDate;
             const dueDate = new Date(
-              `${d.year}-${String(d.month).padStart(2,"0")}-${String(d.day).padStart(2,"0")}T${
+              `${d.year}-${String(d.month).padStart(2, "0")}-${String(d.day).padStart(2, "0")}T${
                 w.dueTime
-                  ? `${String(w.dueTime.hours||0).padStart(2,"0")}:${String(w.dueTime.minutes||0).padStart(2,"0")}:00`
+                  ? `${String(w.dueTime.hours || 0).padStart(2, "0")}:${String(w.dueTime.minutes || 0).padStart(2, "0")}:00`
                   : "23:59:00"
               }`
             );
             return {
-              courseId: course.id, courseName: course.name,
-              courseWorkId: w.id, title: w.title,
-              description: w.description || "", dueDate,
-              link: w.alternateLink, submissionStatus,
+              courseId: course.id,
+              courseName: course.name,
+              courseWorkId: w.id,
+              title: w.title,
+              description: w.description || "",
+              dueDate,
+              link: w.alternateLink,
+              submissionStatus,
               workType: w.workType || "ASSIGNMENT",
             };
           })
         );
 
-        return withStatus.filter(w => w.submissionStatus !== "SUBMITTED");
+        return withStatus.filter((w) => w.submissionStatus !== "SUBMITTED");
       } catch (e) {
         console.error(`Coursework error for ${course.id}:`, e.message);
         return [];
@@ -150,26 +287,308 @@ const getAllDeadlines = async (accessToken, refreshToken) => {
     })
   );
 
-  return results.flat().sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+  return results
+    .flat()
+    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
 };
 
+// ── Students in a course ────────────────────────────────────────
 const getCourseStudents = async (courseId, accessToken, refreshToken) => {
   try {
     const classroom = createClient(accessToken, refreshToken);
     const res = await classroom.courses.students.list({ courseId, pageSize: 50 });
     return res.data.students || [];
   } catch (e) {
+    console.error(`Students error for ${courseId}:`, e.message);
     return [];
   }
 };
 
-const createAnnouncement = async (courseId, text, accessToken, refreshToken) => {
+// ── Create announcement in a course ────────────────────────────
+// ── Create announcement with optional Drive file attachments ──────
+// driveFiles: [{ driveFileId, fileName }]
+const createAnnouncement = async (courseId, text, accessToken, refreshToken, driveFiles = []) => {
   const classroom = createClient(accessToken, refreshToken);
+
+  const materials = driveFiles
+    .filter((f) => f.driveFileId)
+    .map((f) => ({
+      driveFile: {
+        driveFile: { id: f.driveFileId, title: f.fileName || "Attachment" },
+        shareMode: "VIEW",
+      },
+    }));
+
   const res = await classroom.courses.announcements.create({
     courseId,
-    requestBody: { text, state: "PUBLISHED" },
+    requestBody: {
+      text,
+      state: "PUBLISHED",
+      materials: materials.length > 0 ? materials : undefined,
+    },
   });
   return res.data;
+};
+
+// ── Parse due date/time into Classroom API format ─────────────────
+// dateStr: "YYYY-MM-DD", timeStr: "HH:MM" (optional, defaults 23:59)
+// ── Resolve relative date strings to YYYY-MM-DD ──────────────────
+// ── Get current date/time in Philippine time (UTC+8) ──────────────
+const nowPH = () => {
+  // Returns a plain object with local Philippine date/time parts
+  const now = new Date();
+  // Offset Philippines: UTC+8
+  const phOffset = 8 * 60; // minutes
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+  const phMs = utcMs + phOffset * 60000;
+  const ph = new Date(phMs);
+  return {
+    date: ph,
+    year: ph.getFullYear(),
+    month: ph.getMonth() + 1,
+    day: ph.getDate(),
+    dayOfWeek: ph.getDay(), // 0=Sun..6=Sat
+    fmt: () => {
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${ph.getFullYear()}-${pad(ph.getMonth() + 1)}-${pad(ph.getDate())}`;
+    },
+  };
+};
+
+const resolveDate = (dateStr) => {
+  if (!dateStr) return null;
+  const s = dateStr.toLowerCase().trim();
+
+  const pad = (n) => String(n).padStart(2, "0");
+
+  // Work entirely in Philippine local time to avoid UTC midnight shift
+  const ph = nowPH();
+  const fmt = (d) => {
+    // d is a JS Date — interpret in PH timezone
+    const phOffset = 8 * 60;
+    const utcMs = d.getTime() + d.getTimezoneOffset() * 60000;
+    const phDate = new Date(utcMs + phOffset * 60000);
+    return `${phDate.getFullYear()}-${pad(phDate.getMonth() + 1)}-${pad(phDate.getDate())}`;
+  };
+
+  if (s === "today")    return ph.fmt();
+  if (s === "tomorrow") {
+    const d = new Date(ph.date); d.setDate(d.getDate() + 1); return fmt(d);
+  }
+  if (s === "next week") {
+    const d = new Date(ph.date); d.setDate(d.getDate() + 7); return fmt(d);
+  }
+  if (s === "next monday") {
+    const d = new Date(ph.date);
+    d.setDate(d.getDate() + ((1 + 7 - d.getDay()) % 7 || 7));
+    return fmt(d);
+  }
+  if (s === "next friday") {
+    const d = new Date(ph.date);
+    d.setDate(d.getDate() + ((5 + 7 - d.getDay()) % 7 || 7));
+    return fmt(d);
+  }
+
+  // Already in YYYY-MM-DD format — return as-is (already a local date string)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  // Try native Date parse as fallback (e.g. "March 30", "March 30 2025")
+  // Use PH-timezone interpretation
+  const parsed = new Date(dateStr);
+  if (!isNaN(parsed.getTime())) return fmt(parsed);
+
+  return null; // unresolvable — caller will skip dueDate
+};
+
+// ── Parse due date/time into Classroom API format ─────────────────
+// IMPORTANT: Google Classroom API interprets dueDate/dueTime as UTC.
+// Philippine time is UTC+8, so we subtract 8 hours from the intended
+// local deadline before passing it to the API.
+// e.g. "due today at 23:59 PH" → send dueDate for same day, dueTime 15:59 UTC
+const parseDue = (dateStr, timeStr = "23:59") => {
+  const resolved = resolveDate(dateStr);
+  if (!resolved) return {}; // no due date — don't set it
+
+  const [year, month, day] = resolved.split("-").map(Number);
+  const [localHours, localMinutes] = (timeStr || "23:59").split(":").map(Number);
+
+  // Validate all parts are real numbers
+  if (!year || !month || !day) return {};
+
+  // Convert Philippine local time to UTC for the Classroom API
+  // PH = UTC+8, so UTC = local - 8h
+  const phDeadline = new Date(Date.UTC(year, month - 1, day, (localHours || 23), (localMinutes || 59)));
+  const utcDeadline = new Date(phDeadline.getTime() - 8 * 60 * 60 * 1000);
+
+  return {
+    dueDate: {
+      year:  utcDeadline.getUTCFullYear(),
+      month: utcDeadline.getUTCMonth() + 1,
+      day:   utcDeadline.getUTCDate(),
+    },
+    dueTime: {
+      hours:   utcDeadline.getUTCHours(),
+      minutes: utcDeadline.getUTCMinutes(),
+    },
+  };
+};
+
+// ── Create Assignment ─────────────────────────────────────────────
+// options: { title, description, dueDate, dueTime, points, driveFiles }
+const createAssignment = async (courseId, options, accessToken, refreshToken) => {
+  const classroom = createClient(accessToken, refreshToken);
+  const { title, description, dueDate, dueTime, points = 100, driveFiles = [] } = options;
+
+  const materials = driveFiles
+    .filter((f) => f.driveFileId)
+    .map((f) => ({
+      driveFile: {
+        driveFile: { id: f.driveFileId, title: f.fileName || "Attachment" },
+        shareMode: "STUDENT_COPY",
+      },
+    }));
+
+  const res = await classroom.courses.courseWork.create({
+    courseId,
+    requestBody: {
+      title,
+      description: description || "",
+      workType: "ASSIGNMENT",
+      state: "PUBLISHED",
+      maxPoints: points,
+      materials: materials.length > 0 ? materials : undefined,
+      ...parseDue(dueDate, dueTime),
+    },
+  });
+  return res.data;
+};
+
+// ── Create Submission Bin ─────────────────────────────────────────
+// Like an assignment but specifically for file submission — no description needed
+const createSubmissionBin = async (courseId, options, accessToken, refreshToken) => {
+  const classroom = createClient(accessToken, refreshToken);
+  const { title, description, dueDate, dueTime, points = 100 } = options;
+
+  const res = await classroom.courses.courseWork.create({
+    courseId,
+    requestBody: {
+      title,
+      description: description || "Submit your work here.",
+      workType: "ASSIGNMENT",
+      state: "PUBLISHED",
+      maxPoints: points,
+      submissionModificationMode: "MODIFIABLE_UNTIL_TURNED_IN",
+      ...parseDue(dueDate, dueTime),
+    },
+  });
+  return res.data;
+};
+
+// ── Create Quiz Assignment (attaches a Google Form) ───────────────
+// formUrl: the responder URL of an already-created Google Form
+// formId:  Drive file ID of the form
+const createQuizAssignment = async (courseId, options, accessToken, refreshToken) => {
+  const classroom = createClient(accessToken, refreshToken);
+  const { title, description, dueDate, dueTime, points = 100, formId, formUrl } = options;
+
+  // Use `link` material — attaches the form URL directly.
+  // This bypasses all Drive/Forms visibility issues since it's just a URL.
+  // Students click the link to open and submit the Google Form.
+  const materials = formUrl
+    ? [{ link: { url: formUrl, title: `${title} (Quiz)` } }]
+    : undefined;
+
+  try {
+    const res = await classroom.courses.courseWork.create({
+      courseId,
+      requestBody: {
+        title,
+        description: description
+          ? `${description}\n\nQuiz link: ${formUrl}`
+          : `Complete the quiz using the link below:\n${formUrl}`,
+        workType: "ASSIGNMENT",
+        state: "PUBLISHED",
+        maxPoints: points,
+        materials,
+        ...parseDue(dueDate, dueTime),
+      },
+    });
+    return res.data;
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    throw new Error(`Classroom API error (courseId ${courseId}): ${msg}`);
+  }
+};
+
+// ── Delete announcement ───────────────────────────────────────────
+const deleteAnnouncement = async (courseId, announcementId, accessToken, refreshToken) => {
+  const classroom = createClient(accessToken, refreshToken);
+  await classroom.courses.announcements.delete({ courseId, id: announcementId });
+  return { success: true };
+};
+
+// ── Edit (patch) announcement ─────────────────────────────────────
+const editAnnouncement = async (courseId, announcementId, newText, accessToken, refreshToken) => {
+  const classroom = createClient(accessToken, refreshToken);
+  const res = await classroom.courses.announcements.patch({
+    courseId,
+    id:         announcementId,
+    updateMask: "text",
+    requestBody: { text: newText },
+  });
+  return res.data;
+};
+
+// ── Professor: all coursework with submission counts ────────────
+// Returns each assignment with submitted/not-submitted student lists.
+// Kept lightweight: fetches last 10 assignments per course.
+const getProfessorSubmissionSummary = async (courseId, accessToken, refreshToken) => {
+  try {
+    const classroom = createClient(accessToken, refreshToken);
+    const work = await getCourseWork(courseId, accessToken, refreshToken);
+    const recent = work.slice(0, 10); // cap to avoid rate limits
+
+    const results = await Promise.all(recent.map(async (w) => {
+      try {
+        const res = await classroom.courses.courseWork.studentSubmissions.list({
+          courseId,
+          courseWorkId: w.id,
+          pageSize: 100,
+        });
+        const subs = res.data.studentSubmissions || [];
+        const submitted    = subs.filter(s => s.state === "TURNED_IN" || s.state === "RETURNED");
+        const notSubmitted = subs.filter(s => s.state !== "TURNED_IN" && s.state !== "RETURNED");
+
+        // Build due date string
+        let dueDateStr = "No due date";
+        if (w.dueDate) {
+          const d = w.dueDate;
+          dueDateStr = `${d.year}-${String(d.month).padStart(2,"0")}-${String(d.day).padStart(2,"0")}`;
+        }
+
+        return {
+          workId:       w.id,
+          title:        w.title,
+          workType:     w.workType || "ASSIGNMENT",
+          dueDate:      dueDateStr,
+          link:         w.alternateLink,
+          totalStudents:     subs.length,
+          submittedCount:    submitted.length,
+          notSubmittedCount: notSubmitted.length,
+          // Store user IDs so chatbot can list names if students are fetched
+          submittedIds:    submitted.map(s => s.userId),
+          notSubmittedIds: notSubmitted.map(s => s.userId),
+        };
+      } catch {
+        return { workId: w.id, title: w.title, error: true };
+      }
+    }));
+
+    return results.filter(r => !r.error);
+  } catch (err) {
+    console.error(`[getSubmissions] ${courseId}:`, err.message);
+    return [];
+  }
 };
 
 module.exports = {
@@ -179,7 +598,17 @@ module.exports = {
   getAllDeadlines,
   getAllAnnouncements,
   getAllAnnouncementsForCourses,
+  getUnifiedStream,
+  getCourseMaterials,
   getCourseStudents,
   getCourseTeacherName,
+  getProfessorSubmissionSummary,
   createAnnouncement,
+  createAssignment,
+  createSubmissionBin,
+  createQuizAssignment,
+  deleteAnnouncement,
+  editAnnouncement,
+  normalizeMaterials,
 };
+
