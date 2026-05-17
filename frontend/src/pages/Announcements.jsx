@@ -1,10 +1,10 @@
 import { sanitizeAnnouncement } from "../utils/sanitizeHtml";
 import { useState, useEffect, useRef } from "react";
 import api from "../utils/api";
+import { getClassSolid } from "../utils/classColors";
 
 // ── Helpers ──────────────────────────────────────────────────────
-const PALETTE = ["#2563eb","#16a34a","#7c3aed","#b45309","#0f766e","#be123c","#0284c7","#65a30d"];
-const courseColor = (name = "") => PALETTE[name.charCodeAt(0) % PALETTE.length];
+const courseColor = (name = "") => getClassSolid(name);
 
 const timeAgo = (iso) => {
   if (!iso) return "";

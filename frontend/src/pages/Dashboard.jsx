@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../utils/api";
+import { getClassSolid } from "../utils/classColors";
 
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; };
 
@@ -124,17 +125,21 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Course pill strip — no color dots, just clean grey pills */}
+        {/* Course pill strip — coloured per class */}
         {courses.length > 0 && (
           <div style={{ marginTop:16, display:"flex", gap:6, overflowX:"auto", paddingBottom:2 }}>
-            {courses.slice(0,6).map((c,i) => (
-              <a key={c.id} href={c.alternateLink} target="_blank" rel="noopener noreferrer"
-                style={{ flexShrink:0, display:"inline-flex", alignItems:"center", padding:"5px 12px", borderRadius:99, background:"var(--bg-tertiary)", border:"1px solid var(--border-color)", textDecoration:"none", transition:"all 0.15s" }}
-                onMouseEnter={e=>{e.currentTarget.style.background="var(--border-color)";}}
-                onMouseLeave={e=>{e.currentTarget.style.background="var(--bg-tertiary)";}}>
-                <span style={{ fontSize:11.5, color:"var(--text-secondary)", fontWeight:500, whiteSpace:"nowrap" }}>{c.name.length>22?c.name.slice(0,21)+"…":c.name}</span>
-              </a>
-            ))}
+            {courses.slice(0,6).map((c,i) => {
+              const col = getClassSolid(c.name || "");
+              return (
+                <a key={c.id} href={c.alternateLink} target="_blank" rel="noopener noreferrer"
+                  style={{ flexShrink:0, display:"inline-flex", alignItems:"center", gap:6, padding:"5px 12px", borderRadius:99, background: col + "14", border:`1.5px solid ${col}50`, textDecoration:"none", transition:"all 0.15s" }}
+                  onMouseEnter={e=>{e.currentTarget.style.background=col+"28";}}
+                  onMouseLeave={e=>{e.currentTarget.style.background=col+"14";}}>
+                  <span style={{ width:7, height:7, borderRadius:"50%", background:col, flexShrink:0 }}/>
+                  <span style={{ fontSize:11.5, color:col, fontWeight:600, whiteSpace:"nowrap" }}>{c.name.length>22?c.name.slice(0,21)+"…":c.name}</span>
+                </a>
+              );
+            })}
             {courses.length > 6 && (
               <button onClick={() => navigate("/enrolled-classes")} style={{ flexShrink:0, padding:"5px 12px", borderRadius:99, background:"var(--bg-tertiary)", border:"1px solid var(--border-color)", color:"var(--text-muted)", fontSize:11.5, cursor:"pointer" }}>
                 +{courses.length-6} more
@@ -197,14 +202,15 @@ export default function Dashboard() {
             ) : recentAnnouncements.slice(0,4).map((ann,i) => {
               const h = Math.floor((Date.now() - new Date(ann.updateTime||ann.creationTime)) / 3600000);
               const ago = h < 1 ? "Just now" : h < 24 ? `${h}h ago` : `${Math.floor(h/24)}d ago`;
+              const col = getClassSolid(ann.courseName || "");
               return (
                 <div key={ann.id||i} style={{ padding:"10px 16px", borderBottom: i<recentAnnouncements.length-1?"1px solid var(--border-color)":"none", display:"flex", gap:10 }}>
-                  <div style={{ width:32, height:32, borderRadius:8, background:"var(--bg-tertiary)", border:"1px solid var(--border-color)", color:"var(--text-muted)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, flexShrink:0, marginTop:1 }}>
+                  <div style={{ width:32, height:32, borderRadius:8, background: col, color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, flexShrink:0, marginTop:1 }}>
                     {(ann.courseName||"?").slice(0,2).toUpperCase()}
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:2 }}>
-                      <div style={{ fontSize:11.5, fontWeight:700, color:"var(--text-secondary)" }}>{ann.courseName}</div>
+                      <div style={{ fontSize:11.5, fontWeight:700, color: col }}>{ann.courseName}</div>
                       {ann.priority==="urgent" && <span style={{ fontSize:10, fontWeight:700, background:"#fee2e2", color:"#dc2626", padding:"1px 6px", borderRadius:99 }}>URGENT</span>}
                     </div>
                     <div style={{ fontSize:13, color:"var(--text-primary)", lineHeight:1.45, marginBottom:3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{announcementPreview(ann.text||"", 80)}</div>

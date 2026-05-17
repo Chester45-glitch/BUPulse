@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import api from "../utils/api";
+import { getClassSolid } from "../utils/classColors";
 
 const daysInfo = (dueDate) => {
   const d = Math.ceil((new Date(dueDate) - new Date()) / 86400000);
@@ -146,10 +147,12 @@ export default function PendingActivities() {
               const dueDate = new Date(d.dueDate);
               const info = daysInfo(d.dueDate);
               const TypeIcon = WORK_TYPE_ICON[d.workType] || IconFile;
+              const classCol = getClassSolid(d.courseName || "");
               return (
                 <div key={d.courseWorkId || i} style={{
                   background: "var(--card-bg)", borderRadius: 12,
                   border: `1px solid ${info.urgent ? info.bg : "var(--card-border)"}`,
+                  borderLeft: `4px solid ${classCol}`,
                   padding: "14px 16px", boxShadow: "var(--shadow-sm)",
                   animation: `fadeIn 0.3s ease ${i * 0.04}s both`,
                   display: "flex", alignItems: "center", gap: 12,
@@ -169,7 +172,7 @@ export default function PendingActivities() {
                   {/* Info */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.title}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.courseName}</div>
+                    <div style={{ fontSize: 12, color: classCol, fontWeight: 600, marginBottom: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.courseName}</div>
                     <span style={{ background: info.bg, color: info.color, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5 }}>{info.label}</span>
                   </div>
 
@@ -177,7 +180,7 @@ export default function PendingActivities() {
                   {d.link && (
                     <a href={d.link} target="_blank" rel="noopener noreferrer" style={{
                       padding: "8px 14px", borderRadius: 10,
-                      background: "var(--green-800)", color: "#fff",
+                      background: classCol, color: "#fff",
                       fontSize: 12, fontWeight: 600, flexShrink: 0,
                       display: "flex", alignItems: "center", gap: 5, transition: "opacity 0.2s",
                     }}

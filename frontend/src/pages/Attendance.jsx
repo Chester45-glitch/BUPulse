@@ -15,6 +15,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import api from "../utils/api";
+import { getClassSolid } from "../utils/classColors";
 
 // ── Icon helper ───────────────────────────────────────────────────
 const Ico = ({ d, size = 18, sw = 1.8, stroke = "currentColor" }) => (
@@ -38,8 +39,7 @@ const D = {
 };
 
 // ── Constants ─────────────────────────────────────────────────────
-const PALETTE   = ["#2563eb","#16a34a","#7c3aed","#b45309","#0f766e","#be123c","#0284c7","#65a30d"];
-const clrCourse = name => PALETTE[(name?.charCodeAt(0)||0) % PALETTE.length];
+const clrCourse = name => getClassSolid(name || "");
 const statusCfg = {
   present: { bg:"#dcfce7", color:"#16a34a", label:"Present" },
   absent:  { bg:"#fee2e2", color:"#dc2626", label:"Absent"  },
