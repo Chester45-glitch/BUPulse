@@ -1,6 +1,6 @@
 require("dotenv").config();
 const express = require("express");
-const cors    = require("cors");
+const cors = require("cors");
 const session = require("express-session");
 
 const authRoutes         = require("./routes/auth");
@@ -13,12 +13,12 @@ const userRoutes         = require("./routes/user");
 const uploadRoutes       = require("./routes/upload");
 const scheduleRoutes     = require("./routes/schedule");
 const attendanceRoutes   = require("./routes/attendance");
-const bulmsRoutes        = require("./routes/bulms");   // ← NEW
+const bulmsRoutes        = require("./routes/bulms");
+const feedbackRoutes     = require("./routes/feedback");
 
-const { startScheduler }    = require("./services/scheduler");
-const { startBulmsScheduler } = require("./services/bulmsScheduler"); // ← NEW
+const { startScheduler } = require("./services/scheduler");
 
-const app  = express();
+const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors({
@@ -30,7 +30,7 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json({ limit: "25mb" }));
+app.use(express.json({ limit: "25mb" })); // 10MB file = ~13.3MB base64, 25mb gives safe headroom
 app.use(session({
   secret: process.env.SESSION_SECRET || "bupulse-secret",
   resave: false,
@@ -52,7 +52,8 @@ app.use("/api/user",          userRoutes);
 app.use("/api/upload",        uploadRoutes);
 app.use("/api/schedule",      scheduleRoutes);
 app.use("/api/attendance",    attendanceRoutes);
-app.use("/api/bulms",         bulmsRoutes);       // ← NEW
+app.use("/api/bulms",         bulmsRoutes);
+app.use("/api/feedback",      feedbackRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "BUPulse API running", timestamp: new Date() });
@@ -66,5 +67,4 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`🚀 BUPulse API running on http://localhost:${PORT}`);
   startScheduler();
-  startBulmsScheduler();   // ← NEW
 });
