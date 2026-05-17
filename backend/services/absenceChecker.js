@@ -21,7 +21,7 @@
  */
 
 const supabase   = require("../db/supabase");
-const { sendEmail } = require("./gmail");
+const { sendSystemEmail } = require("./gmail");
 
 const CONSECUTIVE_THRESHOLD = 3;
 
@@ -192,9 +192,6 @@ const checkClassAbsences = async (classId, className) => {
     professorRow = data;
   }
 
-  // Use a system email sender — get any admin/professor token available
-  const senderRow = professorRow;
-
   for (const enrollment of enrolled) {
     const student = enrollment.users;
     if (!student?.name) continue;
@@ -212,7 +209,7 @@ const checkClassAbsences = async (classId, className) => {
       .select("id")
       .eq("student_id", student.id)
       .eq("class_id", classId)
-      .gte("alert_sent_at", `${today}T00:00:00Z`)
+      .eq("alert_date", today)
       .single();
 
     if (existing) continue; // Already alerted today
@@ -220,20 +217,15 @@ const checkClassAbsences = async (classId, className) => {
     // ── Send emails ──────────────────────────────────────────────
     console.log(`[AbsenceChecker] Sending alert: ${student.name} — ${className} (${CONSECUTIVE_THRESHOLD} absences)`);
 
-    if (!senderRow?.access_token) {
-      console.warn("[AbsenceChecker] No sender token — skipping email");
-      continue;
-    }
-
     try {
       // 1. Email to student
       const stuMail = buildStudentEmail(student.name, className, CONSECUTIVE_THRESHOLD);
-      await sendEmail(senderRow.access_token, senderRow.refresh_token, student.email, stuMail.subject, stuMail.html);
+      await sendSystemEmail(student.email, stuMail.subject, stuMail.html);
 
       // 2. Email to professor
       if (professorRow && professorRow.email !== student.email) {
         const profMail = buildProfessorEmail(student.name, student.email, className, CONSECUTIVE_THRESHOLD);
-        await sendEmail(senderRow.access_token, senderRow.refresh_token, professorRow.email, profMail.subject, profMail.html);
+        await sendSystemEmail(professorRow.email, profMail.subject, profMail.html);
       }
 
       // 3. Emails to linked parents
@@ -246,7 +238,7 @@ const checkClassAbsences = async (classId, className) => {
         const parent = link.parent;
         if (!parent?.email) continue;
         const parentMail = buildParentEmail(parent.name, student.name, className, CONSECUTIVE_THRESHOLD);
-        await sendEmail(senderRow.access_token, senderRow.refresh_token, parent.email, parentMail.subject, parentMail.html).catch(() => {});
+        await sendSystemEmail(parent.email, parentMail.subject, parentMail.html).catch(() => {});
       }
 
       // Log the alert so we don't re-send today
@@ -254,6 +246,7 @@ const checkClassAbsences = async (classId, className) => {
         student_id:  student.id,
         class_id:    classId,
         class_name:  className,
+        alert_date:  new Date().toISOString().split("T")[0],
         consecutive: CONSECUTIVE_THRESHOLD,
       });
     } catch (err) {
