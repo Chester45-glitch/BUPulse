@@ -27,6 +27,10 @@ export default function ParentDashboard() {
   const [annCourseFilter, setAnnCourseFilter] = useState("all");
   const [attendance, setAttendance] = useState([]);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attClassFilter, setAttClassFilter]   = useState("all");
+  const [attDateFrom, setAttDateFrom]         = useState("");
+  const [attDateTo, setAttDateTo]             = useState("");
+  const [attStatusFilter, setAttStatusFilter] = useState("all");
 
   const loadStudents = async () => {
     setLoadingStudents(true);
@@ -62,6 +66,10 @@ export default function ParentDashboard() {
     setAttendanceLoading(true);
     setAttendance([]);
     setAnnCourseFilter("all");
+    setAttClassFilter("all");
+    setAttStatusFilter("all");
+    setAttDateFrom("");
+    setAttDateTo("");
     api.get(`/parent/student/${selectedStudent.id}/attendance`)
       .then(r => setAttendance(r.data.records || []))
       .catch(() => setAttendance([]))
@@ -379,10 +387,6 @@ export default function ParentDashboard() {
                     };
 
                     const uniqueClasses = [...new Set(attendance.map(r => r.class_id))];
-                    const [attClassFilter, setAttClassFilter] = useState("all");
-                    const [attDateFrom,    setAttDateFrom]    = useState("");
-                    const [attDateTo,      setAttDateTo]      = useState("");
-                    const [attStatusFilter,setAttStatusFilter]= useState("all"); // all|present|absent|late|unlisted
 
                     const filtered = attendance.filter(r => {
                       if (attClassFilter !== "all" && r.class_id !== attClassFilter) return false;
