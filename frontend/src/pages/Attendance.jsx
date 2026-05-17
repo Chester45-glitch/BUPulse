@@ -312,17 +312,34 @@ function AttendanceCard({ record, currentUser, onEdit, onDelete, onVerify, index
         {total > 0 && (
           <>
             <button onClick={() => setExpanded(e => !e)}
-              style={{ fontSize:12.5, color:"#16a34a", background:"none", border:"none", cursor:"pointer", fontWeight:600, padding:0, marginTop:10 }}>
-              {expanded ? "▲ Hide students" : `▼ View ${total} student${total!==1?"s":""}`}
+              style={{ fontSize:12.5, color:"#16a34a", background:"none", border:"none", cursor:"pointer", fontWeight:600, padding:0, marginTop:10, display:"flex", alignItems:"center", gap:5 }}>
+              {expanded ? "▲ Hide" : "▼ View"} {total} student{total!==1?"s":""}
             </button>
             {expanded && (
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:5, marginTop:8 }}>
-                {(record.names||[]).map((s,i) => {
-                  const cfg = statusCfg[s.status] || statusCfg.present;
+              <div style={{ marginTop:10, display:"flex", flexDirection:"column", gap:4 }}>
+                {/* Group by status for cleaner display */}
+                {["present","absent","late"].map(status => {
+                  const group = (record.names||[]).filter(s => (s.status||"present") === status);
+                  if (!group.length) return null;
+                  const cfg = statusCfg[status];
                   return (
-                    <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"5px 10px", borderRadius:8, background:"var(--bg-tertiary)", fontSize:12.5 }}>
-                      <span style={{ color:"var(--text-primary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.name}</span>
-                      <span style={{ padding:"2px 7px", borderRadius:99, background:cfg.bg, color:cfg.color, fontSize:11, fontWeight:600, flexShrink:0, marginLeft:6 }}>{cfg.label}</span>
+                    <div key={status}>
+                      <div style={{ fontSize:11, fontWeight:700, color:cfg.color, textTransform:"uppercase",
+                        letterSpacing:"0.4px", marginBottom:4, marginTop:4 }}>
+                        {cfg.label} ({group.length})
+                      </div>
+                      <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                        {group.map((s,i) => (
+                          <span key={i} style={{
+                            display:"inline-block", padding:"3px 10px", borderRadius:99,
+                            background:cfg.bg, color:cfg.color,
+                            fontSize:12, fontWeight:500,
+                            maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+                          }} title={s.name}>
+                            {s.name}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   );
                 })}
@@ -346,6 +363,7 @@ export default function Attendance() {
   const [syncing,      setSyncing]      = useState(false);   // course sync indicator
   const [refreshing,   setRefreshing]   = useState(false);
   const [filterClass,  setFilterClass]  = useState("all");
+  const [filterDate,   setFilterDate]   = useState("");       // ISO date string YYYY-MM-DD
   const [showModal,    setShowModal]    = useState(false);
   const [editRecord,   setEditRecord]   = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -461,7 +479,11 @@ export default function Attendance() {
   };
 
   // ── Derived ─────────────────────────────────────────────────────
-  const filtered      = filterClass === "all" ? records : records.filter(r => r.class_id === filterClass);
+  const filtered = records.filter(r => {
+    const classOk = filterClass === "all" || r.class_id === filterClass;
+    const dateOk  = !filterDate || r.record_date === filterDate;
+    return classOk && dateOk;
+  });
   const totalPresent  = filtered.reduce((s,r) => s + (r.names||[]).filter(n=>n.status==="present").length, 0);
   const totalStudents = filtered.reduce((s,r) => s + (r.names||[]).length, 0);
   const pct           = totalStudents ? Math.round((totalPresent/totalStudents)*100) : 0;
@@ -542,6 +564,28 @@ export default function Attendance() {
           })}
         </div>
       )}
+
+      {/* Date filter */}
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16, flexWrap:"wrap" }}>
+        <label style={{ fontSize:12.5, color:"var(--text-muted)", fontWeight:600, flexShrink:0 }}>Filter by date:</label>
+        <input
+          type="date"
+          value={filterDate}
+          onChange={e => setFilterDate(e.target.value)}
+          style={{ padding:"6px 10px", borderRadius:8, border:"1.5px solid var(--card-border)",
+            background:"var(--input-bg)", color:"var(--text-primary)", fontSize:13, outline:"none" }}
+        />
+        {filterDate && (
+          <button onClick={() => setFilterDate("")}
+            style={{ padding:"5px 12px", borderRadius:8, border:"1px solid var(--card-border)",
+              background:"transparent", color:"var(--text-muted)", fontSize:12.5, cursor:"pointer" }}>
+            Clear
+          </button>
+        )}
+        <span style={{ fontSize:12, color:"var(--text-faint)", marginLeft:"auto" }}>
+          {filtered.length} record{filtered.length!==1?"s":""} shown
+        </span>
+      </div>
 
       {/* Records */}
       {filtered.length === 0 ? (
