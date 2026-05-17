@@ -34,6 +34,8 @@ const router   = express.Router();
 const supabase = require("../db/supabase");
 const { authenticateToken } = require("../middleware/auth");
 const { syncUserCourses, getClassIdsForUser, verifyUserInClass } = require("../services/userCourseSync");
+const { checkAbsences } = require("../services/absenceChecker");
+const { sendEmail }     = require("../services/gmail");
 const Groq = require("groq-sdk");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
@@ -196,8 +198,14 @@ router.post("/class", authenticateToken, async (req, res) => {
 
     if (error) throw error;
 
-    // Notify all connected class members in real time
+    // Notify all connected class members in real time (SSE)
     broadcastToClass(classId, { event: "INSERT", record });
+
+    // Email notification to all class members (fire-and-forget)
+    notifyClassMembersOfNewAttendance(classId, className, record).catch(e =>
+      console.error("[attendance] notify error:", e.message)
+    );
+
     res.json({ record });
   } catch (err) {
     console.error("[attendance] create error:", err.message);
