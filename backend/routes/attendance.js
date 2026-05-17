@@ -167,6 +167,62 @@ router.get("/class/:classId", authenticateToken, async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════
+// HELPER: email all class members when a new attendance is posted
+// ══════════════════════════════════════════════════════════════════
+async function notifyClassMembersOfNewAttendance(classId, className, record) {
+  try {
+    // Get all user IDs enrolled in this class
+    const { data: members, error: memberErr } = await supabase
+      .from("user_courses")
+      .select("user_id")
+      .eq("course_id", classId);
+
+    if (memberErr || !members || members.length === 0) return;
+
+    const userIds = members.map(m => m.user_id);
+
+    // Fetch their emails and names
+    const { data: users, error: userErr } = await supabase
+      .from("users")
+      .select("id, name, email")
+      .in("id", userIds);
+
+    if (userErr || !users || users.length === 0) return;
+
+    const posterName  = record.poster?.name || "A class member";
+    const recordDate  = record.record_date  || new Date().toLocaleDateString("en-PH");
+    const nameCount   = Array.isArray(record.names) ? record.names.length : 0;
+    const subject     = `[BUPulse] New attendance posted in ${className}`;
+
+    const html = `
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
+  <div style="background:#1e40af;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0">
+    <h2 style="margin:0">📋 New Attendance Record</h2>
+  </div>
+  <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;padding:24px;border-radius:0 0 12px 12px">
+    <p style="margin:0 0 16px;font-size:15px;color:#374151">
+      A new attendance record was posted in <strong>${className}</strong>.
+    </p>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
+      <tr><td style="padding:6px 0;color:#6b7280;width:120px">Posted by</td><td style="padding:6px 0;font-weight:600">${posterName}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280">Date</td><td style="padding:6px 0">${recordDate}</td></tr>
+      ${record.session_label ? `<tr><td style="padding:6px 0;color:#6b7280">Session</td><td style="padding:6px 0">${record.session_label}</td></tr>` : ""}
+      <tr><td style="padding:6px 0;color:#6b7280">Students listed</td><td style="padding:6px 0">${nameCount}</td></tr>
+    </table>
+    <p style="color:#94a3b8;font-size:12px;margin-top:20px">Open BUPulse to view the full attendance details.</p>
+  </div>
+</div>`;
+
+    // Send to all members in parallel, ignore individual failures
+    await Promise.allSettled(
+      users.map(u => sendSystemEmail(u.email, subject, html))
+    );
+  } catch (err) {
+    console.error("[attendance] notifyClassMembers error:", err.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
 // POST /api/attendance/class  — create a record
 // ══════════════════════════════════════════════════════════════════
 router.post("/class", authenticateToken, async (req, res) => {
