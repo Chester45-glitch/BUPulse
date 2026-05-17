@@ -3,15 +3,28 @@ import { useAuth } from "../context/AuthContext";
 import api from "../utils/api";
 import AnnouncementForm from "../components/AnnouncementForm";
 
+// ── Banner palette — soft, distinct, easy on the eyes ────────────
 const BANNERS = [
-  "linear-gradient(135deg,#1a3a5c,#2563eb)",
-  "linear-gradient(135deg,#1a2e1a,#16a34a)",
-  "linear-gradient(135deg,#4c1d95,#7c3aed)",
-  "linear-gradient(135deg,#7c2d12,#ea580c)",
-  "linear-gradient(135deg,#134e4a,#0d9488)",
-  "linear-gradient(135deg,#831843,#db2777)",
+  { bg: "linear-gradient(135deg,#bfdbfe,#93c5fd)", text: "#1e3a5f" },  // light blue
+  { bg: "linear-gradient(135deg,#fecaca,#fca5a5)", text: "#7f1d1d" },  // light red
+  { bg: "linear-gradient(135deg,#bbf7d0,#86efac)", text: "#14532d" },  // light green
+  { bg: "linear-gradient(135deg,#fed7aa,#fdba74)", text: "#7c2d12" },  // peach
+  { bg: "linear-gradient(135deg,#e2e8f0,#cbd5e1)", text: "#334155" },  // light gray-blue
+  { bg: "linear-gradient(135deg,#ddd6fe,#c4b5fd)", text: "#4c1d95" },  // light violet
+  { bg: "linear-gradient(135deg,#bae6fd,#7dd3fc)", text: "#0c4a6e" },  // sky
+  { bg: "linear-gradient(135deg,#fce7f3,#fbcfe8)", text: "#831843" },  // rose
+  { bg: "linear-gradient(135deg,#d1fae5,#a7f3d0)", text: "#064e3b" },  // sage
+  { bg: "linear-gradient(135deg,#ffedd5,#fed7aa)", text: "#7c2d12" },  // apricot
+  { bg: "linear-gradient(135deg,#ede9fe,#ddd6fe)", text: "#5b21b6" },  // lavender
+  { bg: "linear-gradient(135deg,#ccfbf1,#99f6e4)", text: "#134e4a" },  // teal-mint
+  { bg: "linear-gradient(135deg,#dbeafe,#bfdbfe)", text: "#1e40af" },  // powder blue
+  { bg: "linear-gradient(135deg,#fde8e8,#fecaca)", text: "#991b1b" },  // blush
+  { bg: "linear-gradient(135deg,#ecfccb,#d9f99d)", text: "#3f6212" },  // lime-sage
+  { bg: "linear-gradient(135deg,#f3e8ff,#e9d5ff)", text: "#6b21a8" },  // lilac
+  { bg: "linear-gradient(135deg,#e0f2fe,#bae6fd)", text: "#075985" },  // soft sky
+  { bg: "linear-gradient(135deg,#fef9c3,#fef08a)", text: "#713f12" },  // warm sand
 ];
-const getBg = (n = "") => BANNERS[n.charCodeAt(0) % BANNERS.length];
+const getBg = (n = "", i = 0) => BANNERS[i % BANNERS.length];
 
 // ── My Classes tab ────────────────────────────────────────────────
 function MyClassesTab({ courses, loading, onRefresh }) {
@@ -37,18 +50,20 @@ function MyClassesTab({ courses, loading, onRefresh }) {
       <div className="courses-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, marginBottom: 20 }}>
         {loading
           ? [...Array(3)].map((_, i) => <div key={i} style={{ height: 150, borderRadius: 12, background: "var(--card-bg)", animation: `pulse-dot 1.5s ease-in-out ${i * 0.1}s infinite` }} />)
-          : courses.map((course) => (
+          : courses.map((course, idx) => (
             <div key={course.id} onClick={() => loadStudents(course.id)} style={{ background: "var(--card-bg)", borderRadius: 12, border: `2px solid ${selected === course.id ? "#16a34a" : "var(--card-border)"}`, overflow: "hidden", cursor: "pointer", transition: "all 0.2s" }}
               onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-2px)", e.currentTarget.style.boxShadow = "var(--shadow-md)")}
               onMouseLeave={(e) => (e.currentTarget.style.transform = "none", e.currentTarget.style.boxShadow = "none")}
             >
-              <div style={{ height: 60, background: getBg(course.name), position: "relative" }}>
-                <div style={{ position: "absolute", inset: 0, opacity: 0.1, backgroundImage: "radial-gradient(circle,#fff 1px,transparent 1px)", backgroundSize: "14px 14px" }} />
+              <div style={{ height: 60, background: getBg(course.name, idx).bg, position: "relative" }}>
+                <div style={{ position: "absolute", inset: 0, opacity: 0.25, backgroundImage: "radial-gradient(circle,rgba(255,255,255,0.8) 1px,transparent 1px)", backgroundSize: "14px 14px" }} />
+                <div style={{ position: "absolute", bottom: 6, left: 10, fontSize: 11.5, fontWeight: 700, color: getBg(course.name, idx).text }}>
+                  {course.name?.length > 32 ? course.name.slice(0, 32) + "…" : course.name}
+                </div>
               </div>
               <div style={{ padding: "10px 12px" }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{course.name}</div>
                 {course.section && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{course.section}</div>}
-                <div style={{ marginTop: 8, fontSize: 11, color: "var(--green-700)", fontWeight: 500 }}>
+                <div style={{ marginTop: 6, fontSize: 11, color: "var(--green-700)", fontWeight: 500 }}>
                   {selected === course.id ? "▼ Viewing students" : "Click to view students"}
                 </div>
               </div>
@@ -77,7 +92,7 @@ function MyClassesTab({ courses, loading, onRefresh }) {
                 <div key={s.userId || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, background: "var(--bg-tertiary)" }}>
                   {s.profile?.photoUrl
                     ? <img src={s.profile.photoUrl} alt="" style={{ width: 32, height: 32, borderRadius: "50%", flexShrink: 0 }} />
-                    : <div style={{ width: 32, height: 32, borderRadius: "50%", background: getBg(s.profile?.name?.fullName || ""), display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                    : <div style={{ width: 32, height: 32, borderRadius: "50%", background: getBg("", i).bg, display: "flex", alignItems: "center", justifyContent: "center", color: getBg("", i).text, fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
                         {(s.profile?.name?.fullName || "?").charAt(0)}
                       </div>
                   }
