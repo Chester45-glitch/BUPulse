@@ -539,6 +539,59 @@ const editAnnouncement = async (courseId, announcementId, newText, accessToken, 
   return res.data;
 };
 
+// ── Professor: all coursework with submission counts ────────────
+// Returns each assignment with submitted/not-submitted student counts.
+// Uses classroom.coursework.students scope for professor-side submission listing.
+const getProfessorSubmissionSummary = async (courseId, accessToken, refreshToken) => {
+  try {
+    const classroom = createClient(accessToken, refreshToken);
+    const work = await getCourseWork(courseId, accessToken, refreshToken);
+    const recent = work.slice(0, 8); // cap to avoid rate limits
+
+    const results = await Promise.all(recent.map(async (w) => {
+      try {
+        // Use '-' for all students (professor view) — requires coursework.students scope
+        const res = await classroom.courses.courseWork.studentSubmissions.list({
+          courseId,
+          courseWorkId: w.id,
+          userId: "-",   // "-" means all students (professor-only)
+          pageSize: 100,
+        });
+        const subs = res.data.studentSubmissions || [];
+        const submitted    = subs.filter(s => s.state === "TURNED_IN" || s.state === "RETURNED");
+        const notSubmitted = subs.filter(s => s.state !== "TURNED_IN" && s.state !== "RETURNED" && s.state !== "RECLAIMED_BY_STUDENT");
+
+        let dueDateStr = "No due date";
+        if (w.dueDate) {
+          const d = w.dueDate;
+          dueDateStr = `${d.year}-${String(d.month).padStart(2,"0")}-${String(d.day).padStart(2,"0")}`;
+        }
+
+        return {
+          workId:            w.id,
+          title:             w.title,
+          workType:          w.workType || "ASSIGNMENT",
+          dueDate:           dueDateStr,
+          link:              w.alternateLink,
+          totalStudents:     subs.length,
+          submittedCount:    submitted.length,
+          notSubmittedCount: notSubmitted.length,
+          submittedIds:      submitted.map(s => s.userId),
+          notSubmittedIds:   notSubmitted.map(s => s.userId),
+        };
+      } catch {
+        // Silently skip assignments we can't read (scope/permission issue)
+        return null;
+      }
+    }));
+
+    return results.filter(Boolean);
+  } catch (err) {
+    console.error(`[getSubmissions] ${courseId}:`, err.message);
+    return [];
+  }
+};
+
 module.exports = {
   getCourses,
   getTaughtCourses,
@@ -550,6 +603,7 @@ module.exports = {
   getCourseMaterials,
   getCourseStudents,
   getCourseTeacherName,
+  getProfessorSubmissionSummary,
   createAnnouncement,
   createAssignment,
   createSubmissionBin,
