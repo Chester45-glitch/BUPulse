@@ -27,7 +27,6 @@ export default function ParentDashboard() {
   const [annCourseFilter, setAnnCourseFilter] = useState("all");
   const [attendance, setAttendance] = useState([]);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
-  const [attendanceFilter, setAttendanceFilter] = useState("all");
 
   const loadStudents = async () => {
     setLoadingStudents(true);
@@ -62,7 +61,6 @@ export default function ParentDashboard() {
     // Load attendance for this student
     setAttendanceLoading(true);
     setAttendance([]);
-    setAttendanceFilter("all");
     setAnnCourseFilter("all");
     api.get(`/parent/student/${selectedStudent.id}/attendance`)
       .then(r => setAttendance(r.data.records || []))
@@ -366,11 +364,50 @@ export default function ParentDashboard() {
                       absent:  { bg:"#fee2e2", color:"#dc2626", label:"Absent"  },
                       late:    { bg:"#fef9c3", color:"#ca8a04", label:"Late"    },
                     };
+
+                    // Normalize name for fuzzy match
+                    const normName = (n="") => n.toLowerCase().replace(/[^a-z\s]/g,"").replace(/,/g," ").replace(/\s+/g," ").trim();
+                    const studentNorm = normName(selectedStudent?.name || "");
+
+                    // Find the linked student's own entry in a record's names[]
+                    const findStudentEntry = (names=[]) => {
+                      if (!studentNorm) return null;
+                      return names.find(e => {
+                        const en = normName(e.name||"");
+                        return en === studentNorm || en.includes(studentNorm) || studentNorm.includes(en);
+                      }) || null;
+                    };
+
                     const uniqueClasses = [...new Set(attendance.map(r => r.class_id))];
-                    const filtered = attendanceFilter === "all"
-                      ? attendance
-                      : attendance.filter(r => r.class_id === attendanceFilter);
-                    const fmtDate = d => !d ? "" : new Date(d).toLocaleDateString("en-PH",{weekday:"short",month:"short",day:"numeric",year:"numeric"});
+                    const [attClassFilter, setAttClassFilter] = useState("all");
+                    const [attDateFrom,    setAttDateFrom]    = useState("");
+                    const [attDateTo,      setAttDateTo]      = useState("");
+                    const [attStatusFilter,setAttStatusFilter]= useState("all"); // all|present|absent|late|unlisted
+
+                    const filtered = attendance.filter(r => {
+                      if (attClassFilter !== "all" && r.class_id !== attClassFilter) return false;
+                      if (attDateFrom && r.record_date < attDateFrom) return false;
+                      if (attDateTo   && r.record_date > attDateTo)   return false;
+                      if (attStatusFilter !== "all") {
+                        const entry = findStudentEntry(r.names||[]);
+                        const status = entry ? (entry.status||"present") : "unlisted";
+                        if (attStatusFilter === "absent"   && status !== "absent")   return false;
+                        if (attStatusFilter === "present"  && status !== "present")  return false;
+                        if (attStatusFilter === "late"     && status !== "late")     return false;
+                        if (attStatusFilter === "unlisted" && status !== "unlisted") return false;
+                      }
+                      return true;
+                    });
+
+                    // Student-specific summary across all (unfiltered-by-status) records
+                    const studentSummary = attendance.reduce((acc, r) => {
+                      const entry = findStudentEntry(r.names||[]);
+                      const s = entry ? (entry.status||"present") : "unlisted";
+                      acc[s] = (acc[s]||0) + 1;
+                      return acc;
+                    }, {});
+
+                    const fmtDate = d => !d ? "" : new Date(d+"T00:00:00").toLocaleDateString("en-PH",{weekday:"short",month:"short",day:"numeric",year:"numeric"});
 
                     return (
                       <div>
@@ -387,80 +424,135 @@ export default function ParentDashboard() {
                           </div>
                         ) : (
                           <>
-                            {/* Summary */}
-                            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
-                              {["present","absent","late"].map(s => {
-                                const count = filtered.reduce((acc,r)=>acc+(r.names||[]).filter(n=>n.status===s).length,0);
-                                const cfg = statusCfg[s];
-                                return (
-                                  <div key={s} style={{ background:cfg.bg, borderRadius:10, padding:"10px 14px", textAlign:"center" }}>
-                                    <div style={{ fontSize:22, fontWeight:700, color:cfg.color }}>{count}</div>
-                                    <div style={{ fontSize:11, color:cfg.color, fontWeight:600 }}>{cfg.label}</div>
+                            {/* Student's own attendance summary */}
+                            <div style={{ background:"#f0f9ff", border:"1.5px solid #bae6fd", borderRadius:12, padding:"12px 16px", marginBottom:14 }}>
+                              <div style={{ fontSize:12, fontWeight:700, color:"#0369a1", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px" }}>
+                                {selectedStudent.name}'s Attendance Summary
+                              </div>
+                              <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:6 }}>
+                                {[
+                                  {key:"present",  label:"Present",  bg:"#dcfce7", color:"#16a34a"},
+                                  {key:"absent",   label:"Absent",   bg:"#fee2e2", color:"#dc2626"},
+                                  {key:"late",     label:"Late",     bg:"#fef9c3", color:"#ca8a04"},
+                                  {key:"unlisted", label:"Unlisted", bg:"#f3f4f6", color:"#6b7280"},
+                                ].map(({key,label,bg,color}) => (
+                                  <div key={key} style={{ background:bg, borderRadius:8, padding:"8px 10px", textAlign:"center" }}>
+                                    <div style={{ fontSize:20, fontWeight:700, color }}>{studentSummary[key]||0}</div>
+                                    <div style={{ fontSize:10, color, fontWeight:600 }}>{label}</div>
                                   </div>
-                                );
-                              })}
+                                ))}
+                              </div>
                             </div>
 
-                            {/* Class filter pills */}
-                            {uniqueClasses.length > 1 && (
-                              <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
-                                {["all", ...uniqueClasses].map(id => {
-                                  const name = id==="all" ? "All Classes" : attendance.find(r=>r.class_id===id)?.class_name||id;
-                                  const active = attendanceFilter === id;
+                            {/* Filters row */}
+                            <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12, alignItems:"flex-end" }}>
+                              {/* Class filter */}
+                              {uniqueClasses.length > 1 && (
+                                <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                                  <label style={{ fontSize:10, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase" }}>Class</label>
+                                  <select value={attClassFilter} onChange={e=>setAttClassFilter(e.target.value)}
+                                    style={{ padding:"5px 10px", borderRadius:8, border:"1.5px solid var(--border-color)", background:"var(--input-bg)", color:"var(--text-primary)", fontSize:12, cursor:"pointer" }}>
+                                    <option value="all">All Classes</option>
+                                    {uniqueClasses.map(id => (
+                                      <option key={id} value={id}>{attendance.find(r=>r.class_id===id)?.class_name||id}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+                              {/* Student status filter */}
+                              <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                                <label style={{ fontSize:10, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase" }}>Status</label>
+                                <select value={attStatusFilter} onChange={e=>setAttStatusFilter(e.target.value)}
+                                  style={{ padding:"5px 10px", borderRadius:8, border:"1.5px solid var(--border-color)", background:"var(--input-bg)", color:"var(--text-primary)", fontSize:12, cursor:"pointer" }}>
+                                  <option value="all">All</option>
+                                  <option value="present">Present</option>
+                                  <option value="absent">Absent</option>
+                                  <option value="late">Late</option>
+                                  <option value="unlisted">Unlisted</option>
+                                </select>
+                              </div>
+                              {/* Date range */}
+                              <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                                <label style={{ fontSize:10, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase" }}>From</label>
+                                <input type="date" value={attDateFrom} onChange={e=>setAttDateFrom(e.target.value)}
+                                  style={{ padding:"5px 10px", borderRadius:8, border:"1.5px solid var(--border-color)", background:"var(--input-bg)", color:"var(--text-primary)", fontSize:12 }}/>
+                              </div>
+                              <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                                <label style={{ fontSize:10, color:"var(--text-muted)", fontWeight:600, textTransform:"uppercase" }}>To</label>
+                                <input type="date" value={attDateTo} onChange={e=>setAttDateTo(e.target.value)}
+                                  style={{ padding:"5px 10px", borderRadius:8, border:"1.5px solid var(--border-color)", background:"var(--input-bg)", color:"var(--text-primary)", fontSize:12 }}/>
+                              </div>
+                              {(attClassFilter!=="all"||attStatusFilter!=="all"||attDateFrom||attDateTo) && (
+                                <button onClick={()=>{setAttClassFilter("all");setAttStatusFilter("all");setAttDateFrom("");setAttDateTo("");}}
+                                  style={{ alignSelf:"flex-end", padding:"5px 12px", borderRadius:8, border:"1.5px solid #fecaca", background:"#fee2e2", color:"#dc2626", fontSize:12, fontWeight:600, cursor:"pointer" }}>
+                                  Clear
+                                </button>
+                              )}
+                            </div>
+
+                            <div style={{ fontSize:12, color:"var(--text-muted)", marginBottom:10 }}>
+                              Showing {filtered.length} of {attendance.length} records
+                            </div>
+
+                            {/* Records */}
+                            {filtered.length === 0 ? (
+                              <div style={{ textAlign:"center", padding:28, color:"var(--text-muted)" }}>No records match the selected filters.</div>
+                            ) : (
+                              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                                {filtered.map((record, i) => {
+                                  const isVerified = record.is_verified===true;
+                                  const studentEntry = findStudentEntry(record.names||[]);
+                                  const studentStatus = studentEntry ? (studentEntry.status||"present") : "unlisted";
+                                  const stuCfg = statusCfg[studentStatus] || { bg:"#f3f4f6", color:"#6b7280", label:"Unlisted" };
+                                  const present = (record.names||[]).filter(n=>n.status==="present"||(!n.status&&n.name)).length;
+                                  const absent  = (record.names||[]).filter(n=>n.status==="absent").length;
+                                  const late    = (record.names||[]).filter(n=>n.status==="late").length;
                                   return (
-                                    <button key={id} onClick={()=>setAttendanceFilter(id)}
-                                      style={{ padding:"4px 12px", borderRadius:99, fontSize:11.5, fontWeight:active?700:400,
-                                        border:`1.5px solid ${active?"#3730a3":"var(--border-color)"}`,
-                                        background:active?"rgba(55,48,163,0.1)":"transparent",
-                                        color:active?"#3730a3":"var(--text-muted)", cursor:"pointer" }}>
-                                      {name.length>22 ? name.slice(0,21)+"…" : name}
-                                    </button>
+                                    <div key={record.id||i} style={{ background:"var(--card-bg)", borderRadius:12,
+                                      border:`1.5px solid ${isVerified?"rgba(22,163,74,0.35)":"var(--card-border)"}`,
+                                      overflow:"hidden" }}>
+                                      {isVerified && (
+                                        <div style={{ background:"rgba(22,163,74,0.08)", padding:"5px 14px", fontSize:11.5, color:"#16a34a", fontWeight:700, display:"flex", alignItems:"center", gap:6, borderBottom:"1px solid rgba(22,163,74,0.2)" }}>
+                                          ✅ Verified {record.verifier?.name ? `by ${record.verifier.name}` : ""}
+                                        </div>
+                                      )}
+                                      <div style={{ padding:"12px 14px" }}>
+                                        <div style={{ display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:6, marginBottom:8 }}>
+                                          <div>
+                                            <div style={{ fontSize:14, fontWeight:700, color:"var(--text-primary)" }}>{record.class_name}</div>
+                                            <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:2 }}>
+                                              {fmtDate(record.record_date)}
+                                              {record.session_label ? ` · ${record.session_label}` : ""}
+                                            </div>
+                                          </div>
+                                          <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"flex-start" }}>
+                                            {present>0 && <span style={{ padding:"2px 8px", borderRadius:99, background:"#dcfce7", color:"#16a34a", fontSize:11, fontWeight:700 }}>{present} Present</span>}
+                                            {absent>0  && <span style={{ padding:"2px 8px", borderRadius:99, background:"#fee2e2", color:"#dc2626", fontSize:11, fontWeight:700 }}>{absent} Absent</span>}
+                                            {late>0    && <span style={{ padding:"2px 8px", borderRadius:99, background:"#fef9c3", color:"#ca8a04", fontSize:11, fontWeight:700 }}>{late} Late</span>}
+                                          </div>
+                                        </div>
+
+                                        {/* Student's own status — prominently shown */}
+                                        <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px", borderRadius:8, background:stuCfg.bg, marginBottom:record.poster?6:0 }}>
+                                          <span style={{ fontSize:12, fontWeight:700, color:stuCfg.color }}>
+                                            {selectedStudent.name}'s status:
+                                          </span>
+                                          <span style={{ fontSize:13, fontWeight:800, color:stuCfg.color, textTransform:"capitalize" }}>
+                                            {studentStatus === "unlisted" ? "Not listed in this record" : stuCfg.label}
+                                          </span>
+                                        </div>
+
+                                        {record.poster && (
+                                          <div style={{ fontSize:11.5, color:"var(--text-faint)", marginTop:6 }}>
+                                            Posted by {record.poster.name||"Unknown"}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
                                   );
                                 })}
                               </div>
                             )}
-
-                            {/* Records */}
-                            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                              {filtered.map((record, i) => {
-                                const isVerified = record.is_verified===true;
-                                const present = (record.names||[]).filter(n=>n.status==="present").length;
-                                const absent  = (record.names||[]).filter(n=>n.status==="absent").length;
-                                const late    = (record.names||[]).filter(n=>n.status==="late").length;
-                                return (
-                                  <div key={record.id||i} style={{ background:"var(--card-bg)", borderRadius:12,
-                                    border:`1.5px solid ${isVerified?"rgba(22,163,74,0.35)":"var(--card-border)"}`,
-                                    overflow:"hidden" }}>
-                                    {isVerified && (
-                                      <div style={{ background:"rgba(22,163,74,0.08)", padding:"5px 14px", fontSize:11.5, color:"#16a34a", fontWeight:700, display:"flex", alignItems:"center", gap:6, borderBottom:"1px solid rgba(22,163,74,0.2)" }}>
-                                        ✅ Verified {record.verifier?.name ? `by ${record.verifier.name}` : ""}
-                                      </div>
-                                    )}
-                                    <div style={{ padding:"12px 14px" }}>
-                                      <div style={{ display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:6, marginBottom:8 }}>
-                                        <div>
-                                          <div style={{ fontSize:14, fontWeight:700, color:"var(--text-primary)" }}>{record.class_name}</div>
-                                          <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:2 }}>
-                                            {fmtDate(record.record_date)}
-                                            {record.session_label ? ` · ${record.session_label}` : ""}
-                                          </div>
-                                        </div>
-                                        <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"flex-start" }}>
-                                          {present>0 && <span style={{ padding:"2px 8px", borderRadius:99, background:"#dcfce7", color:"#16a34a", fontSize:11, fontWeight:700 }}>{present} Present</span>}
-                                          {absent>0  && <span style={{ padding:"2px 8px", borderRadius:99, background:"#fee2e2", color:"#dc2626", fontSize:11, fontWeight:700 }}>{absent} Absent</span>}
-                                          {late>0    && <span style={{ padding:"2px 8px", borderRadius:99, background:"#fef9c3", color:"#ca8a04", fontSize:11, fontWeight:700 }}>{late} Late</span>}
-                                        </div>
-                                      </div>
-                                      {record.poster && (
-                                        <div style={{ fontSize:11.5, color:"var(--text-faint)" }}>
-                                          Posted by {record.poster.name||"Unknown"}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
                           </>
                         )}
                       </div>
