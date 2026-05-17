@@ -296,6 +296,11 @@ router.patch("/class/:id/verify", authenticateToken, async (req, res) => {
 
     broadcastToClass(record.class_id, { event: "UPDATE", record });
     res.json({ record });
+
+    // Fire absence check for this class after every verification (fire-and-forget)
+    checkAbsences(record.class_id).catch(e =>
+      console.error("[attendance] absence check error:", e.message)
+    );
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
