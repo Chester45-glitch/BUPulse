@@ -305,13 +305,20 @@ const getTransport = () => {
       user: process.env.SYSTEM_EMAIL_USER,
       pass: process.env.SYSTEM_EMAIL_PASS,
     },
+    // Fail fast — avoids long "Connection timeout" hangs
+    connectionTimeout: 10000,  // 10 s to establish TCP connection
+    greetingTimeout:   10000,  // 10 s to receive SMTP greeting
+    socketTimeout:     15000,  // 15 s of inactivity before giving up
   });
   return _transport;
 };
 
 const sendSystemEmail = async (to, subject, html) => {
   if (!process.env.SYSTEM_EMAIL_USER || !process.env.SYSTEM_EMAIL_PASS) {
-    throw new Error("SYSTEM_EMAIL_USER or SYSTEM_EMAIL_PASS not set in .env");
+    throw new Error(
+      "Email not configured: set SYSTEM_EMAIL_USER and SYSTEM_EMAIL_PASS " +
+      "in your Render environment variables (use a Gmail App Password)."
+    );
   }
   const transport = getTransport();
   await transport.sendMail({
