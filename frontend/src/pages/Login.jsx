@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
 
 const StudentIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -53,12 +52,42 @@ export default function Login() {
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
-    if (p.get("error")) setError("Login failed. Please try again.");
+    const err = p.get("error");
+    if (err === "timeout")
+      setError("Sign-in timed out — our server may be warming up. Please try again.");
+    else if (err === "account_deleted")
+      setError("This account has been deleted.");
+    else if (err)
+      setError("Sign-in failed. Please try again.");
+  }, []);
+
+  // Reset loading if user comes back to this tab/page (e.g. closed Google OAuth popup,
+  // pressed back, or the redirect failed). Without this, the button stays "Redirecting…" forever.
+  useEffect(() => {
+    const resetOnReturn = () => { setLoading(false); };
+    // pageshow fires when navigating back via browser history
+    window.addEventListener("pageshow", resetOnReturn);
+    // visibilitychange fires when user switches tabs and comes back
+    const onVisible = () => { if (document.visibilityState === "visible") setLoading(false); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("pageshow", resetOnReturn);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   const handleLogin = () => {
     setLoading(true);
-    window.location.href = `${import.meta.env.VITE_API_URL}/api/auth/google?role=${role}`;
+    const apiBase = import.meta.env.VITE_API_URL || "";
+    if (!apiBase) {
+      setError("API URL not configured. Please contact support.");
+      setLoading(false);
+      return;
+    }
+    // Safety timeout: if we're still on this page after 30s, reset the button
+    const timeout = setTimeout(() => setLoading(false), 30000);
+    window._loginTimeout = timeout;
+    window.location.href = `${apiBase}/api/auth/google?role=${role}`;
   };
 
   return (
@@ -103,35 +132,10 @@ export default function Login() {
         </div>
 
         {/* Footer — FIXED: Bicol University Polangui */}
-        <div style={{ position: "relative", padding: "16px 52px", borderTop: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ color: "rgba(255,255,255,0.27)", fontSize: 12 }}>Bicol University Polangui</span>
-            <span style={{ color: "rgba(255,255,255,0.15)", fontSize: 12 }}>·</span>
-            <span style={{ color: "rgba(255,255,255,0.27)", fontSize: 12 }}>Academic Platform</span>
-          </div>
-          <a
-            href="https://github.com/Chester45-glitch/BUPulse/releases/latest/download/bupulse.apk"
-            download="BUPulse.apk"
-            style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "6px 12px", borderRadius: 8,
-              border: "1px solid rgba(255,255,255,0.15)",
-              background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.65)",
-              fontSize: 12, fontWeight: 600, textDecoration: "none",
-              whiteSpace: "nowrap", transition: "all 0.15s",
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)"; e.currentTarget.style.color = "#fff"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"; e.currentTarget.style.color = "rgba(255,255,255,0.65)"; }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
-              <line x1="12" y1="18" x2="12.01" y2="18"/>
-            </svg>
-            Get the Mobile App
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3v13M5 14l7 7 7-7"/>
-            </svg>
-          </a>
+        <div style={{ position: "relative", padding: "16px 52px", borderTop: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ color: "rgba(255,255,255,0.27)", fontSize: 12 }}>Bicol University Polangui</span>
+          <span style={{ color: "rgba(255,255,255,0.15)", fontSize: 12 }}>·</span>
+          <span style={{ color: "rgba(255,255,255,0.27)", fontSize: 12 }}>Academic Platform</span>
         </div>
       </div>
 
@@ -214,44 +218,10 @@ export default function Login() {
             {loading ? "Redirecting…" : "Continue with Google"}
           </button>
 
-          {/* Get the Mobile App */}
-          <a
-            href="/downloads/bupulse.apk"
-            download="BUPulse.apk"
-            style={{
-              width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
-              gap: 10, padding: "13px 20px", borderRadius: 12,
-              border: "1.5px solid rgba(22,163,74,0.35)",
-              background: "rgba(22,163,74,0.06)", color: "#15803d",
-              fontSize: 14.5, fontWeight: 600, cursor: "pointer",
-              transition: "all 0.17s", fontFamily: "var(--font-body)",
-              textDecoration: "none", marginBottom: 14,
-              boxShadow: "0 1px 4px rgba(22,163,74,0.08)",
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = "rgba(22,163,74,0.12)"; e.currentTarget.style.borderColor = "#16a34a"; e.currentTarget.style.transform = "translateY(-1px)"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = "rgba(22,163,74,0.06)"; e.currentTarget.style.borderColor = "rgba(22,163,74,0.35)"; e.currentTarget.style.transform = "none"; }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
-              <line x1="12" y1="18" x2="12.01" y2="18"/>
-            </svg>
-            Get the Mobile App
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 2 }}>
-              <path d="M12 3v13M5 14l7 7 7-7"/>
-            </svg>
-          </a>
-
           {/* Security note */}
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 7, background: "rgba(22,163,74,0.06)", border: "1px solid rgba(22,163,74,0.2)", borderRadius: 10, padding: "11px 14px", color: "rgba(22,163,74,0.85)", fontSize: 12.5, lineHeight: 1.55, marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 7, background: "rgba(22,163,74,0.06)", border: "1px solid rgba(22,163,74,0.2)", borderRadius: 10, padding: "11px 14px", color: "rgba(22,163,74,0.85)", fontSize: 12.5, lineHeight: 1.55 }}>
             <svg style={{ flexShrink: 0, marginTop: 1 }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             Sign in with the Google account you use for your enrolled classes. No password required.
-          </div>
-
-          {/* Legal links */}
-          <div style={{ display: "flex", justifyContent: "center", gap: 16, fontSize: 12, color: "var(--text-muted)" }}>
-            <Link to="/privacy-policy" style={{ color: "var(--text-muted)", textDecoration: "none" }} onMouseEnter={e => e.currentTarget.style.color = "#16a34a"} onMouseLeave={e => e.currentTarget.style.color = "var(--text-muted)"}>Privacy Policy</Link>
-            <span>•</span>
-            <Link to="/terms-of-service" style={{ color: "var(--text-muted)", textDecoration: "none" }} onMouseEnter={e => e.currentTarget.style.color = "#16a34a"} onMouseLeave={e => e.currentTarget.style.color = "var(--text-muted)"}>Terms of Service</Link>
           </div>
         </div>
       </div>
