@@ -40,7 +40,7 @@ router.post("/", authenticateToken, async (req, res) => {
 
     if (!userRow) return res.status(404).json({ error: "User not found." });
 
-    // Save to DB
+    // Save to DB first
     await supabase.from("feedback").insert({
       user_id:    userRow.id,
       user_name:  userRow.name,
@@ -50,13 +50,15 @@ router.post("/", authenticateToken, async (req, res) => {
       message:    message.trim(),
     });
 
-    // Send email to developer
-    {
-      const catLabel = CATEGORY_LABELS[category] || "💬 Feedback";
-      const roleLabel = { student:"Student", professor:"Professor", parent:"Parent" }[userRow.role] || userRow.role;
-      const subject  = `[BUPulse Feedback] ${catLabel} from ${userRow.name}`;
+    // ── Respond IMMEDIATELY — don't wait for email ─────────────────
+    // This ensures the user sees the success state instantly.
+    res.json({ success: true, message: "Thank you for your feedback!" });
 
-      const html = `
+    // ── Send email to developer in background (fire-and-forget) ────
+    const catLabel  = CATEGORY_LABELS[category] || "💬 Feedback";
+    const roleLabel = { student:"Student", professor:"Professor", parent:"Parent" }[userRow.role] || userRow.role;
+    const subject   = `[BUPulse Feedback] ${catLabel} from ${userRow.name}`;
+    const html = `
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
   <div style="background:#1e40af;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0">
     <h2 style="margin:0">📬 BUPulse Feedback Received</h2>
@@ -77,11 +79,8 @@ router.post("/", authenticateToken, async (req, res) => {
   </div>
 </div>`;
 
-      await sendSystemEmail(DEVELOPER_EMAIL, subject, html)
-        .catch(e => console.error("[feedback] email error:", e.message));
-    }
-
-    res.json({ success: true, message: "Thank you for your feedback!" });
+    sendSystemEmail(DEVELOPER_EMAIL, subject, html)
+      .catch(e => console.error("[feedback] email error:", e.message));
   } catch (err) {
     console.error("[feedback] error:", err.message);
     res.status(500).json({ error: err.message });
