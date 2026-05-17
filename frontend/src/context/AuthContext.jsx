@@ -7,9 +7,10 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUser = useCallback(async () => {
+  const fetchUser = useCallback(async (showLoading = false) => {
     const token = localStorage.getItem("bupulse_token");
     if (!token) { setLoading(false); return; }
+    if (showLoading) setLoading(true);
     try {
       const res = await api.get("/auth/me");
       setUser(res.data.user);
@@ -36,7 +37,7 @@ export const AuthProvider = ({ children }) => {
 
   const setToken = (token) => {
     localStorage.setItem("bupulse_token", token);
-    fetchUser();
+    fetchUser(true);  // show loading=true so no flash of Login page during OAuth callback
   };
 
   return (
