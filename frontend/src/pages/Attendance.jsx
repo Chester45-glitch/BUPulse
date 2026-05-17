@@ -248,7 +248,7 @@ function AttendanceCard({ record, currentUser, onEdit, onDelete, onVerify, index
       )}
 
       {/* Coloured header */}
-      <div style={{ background:color, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
+      <div style={{ background:color, padding:"14px 20px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ width:36, height:36, borderRadius:10, background:"rgba(255,255,255,0.22)", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:11, fontWeight:700 }}>
             {record.class_name?.slice(0,2).toUpperCase()}
@@ -283,7 +283,7 @@ function AttendanceCard({ record, currentUser, onEdit, onDelete, onVerify, index
       </div>
 
       {/* Body */}
-      <div style={{ padding:"14px 16px" }}>
+      <div style={{ padding:"18px 20px" }}>
         <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap" }}>
           {[
             { label:"Present", val:present, ...statusCfg.present },
@@ -331,9 +331,9 @@ function AttendanceCard({ record, currentUser, onEdit, onDelete, onVerify, index
                       <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
                         {group.map((s,i) => (
                           <span key={i} style={{
-                            display:"inline-block", padding:"3px 10px", borderRadius:99,
+                            display:"inline-block", padding:"4px 12px", borderRadius:99,
                             background:cfg.bg, color:cfg.color,
-                            fontSize:12, fontWeight:500,
+                            fontSize:14, fontWeight:500,
                             maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
                           }} title={s.name}>
                             {s.name}
@@ -499,7 +499,7 @@ export default function Attendance() {
   );
 
   return (
-    <div style={{ maxWidth:900, margin:"0 auto", animation:"fadeIn 0.35s ease" }}>
+    <div style={{ maxWidth:1100, margin:"0 auto", animation:"fadeIn 0.35s ease" }}>
 
       {/* Header */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
@@ -549,19 +549,20 @@ export default function Attendance() {
         <StatBox label="Attendance Rate" value={`${pct}%`}        color={pct>=75?"#16a34a":pct>=50?"#ca8a04":"#dc2626"}/>
       </div>
 
-      {/* Class filter */}
-      {courses.length > 1 && (
-        <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
-          {["all", ...courses.map(c=>c.id)].map(id => {
-            const name   = id==="all" ? "All Classes" : courses.find(c=>c.id===id)?.name||id;
-            const active = filterClass === id;
-            return (
-              <button key={id} onClick={() => setFilterClass(id)}
-                style={{ padding:"5px 14px", borderRadius:99, border:`1.5px solid ${active?"#16a34a":"var(--border-color)"}`, background:active?"rgba(22,163,74,0.1)":"transparent", color:active?"#16a34a":"var(--text-muted)", fontSize:12.5, fontWeight:active?600:400, cursor:"pointer", transition:"all 0.12s" }}>
-                {name}
-              </button>
-            );
-          })}
+      {/* Class filter — dropdown */}
+      {courses.length > 0 && (
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
+          <label style={{ fontSize:12.5, color:"var(--text-muted)", fontWeight:600, flexShrink:0 }}>Class:</label>
+          <select
+            value={filterClass}
+            onChange={e => setFilterClass(e.target.value)}
+            style={{ flex:1, maxWidth:340, padding:"8px 12px", borderRadius:9, border:"1.5px solid var(--card-border)", background:"var(--input-bg)", color:"var(--text-primary)", fontSize:13.5, outline:"none", cursor:"pointer" }}
+          >
+            <option value="all">All Classes</option>
+            {courses.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
         </div>
       )}
 
@@ -597,7 +598,7 @@ export default function Attendance() {
           </div>
         </div>
       ) : (
-        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+        <div className="attendance-grid" style={{ display:"grid", gap:16 }}>
           {filtered.map((record, i) => (
             <AttendanceCard key={record.id} record={record} index={i} currentUser={user}
               onEdit={rec => { setEditRecord(rec); setShowModal(true); }}
@@ -618,6 +619,8 @@ export default function Attendance() {
         @keyframes fadeUp    { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
         @keyframes scaleIn   { from{opacity:0;transform:scale(0.94)} to{opacity:1;transform:scale(1)} }
         @keyframes spin      { to{transform:rotate(360deg)} }
+        .attendance-grid { grid-template-columns: repeat(2, 1fr); }
+        @media (max-width: 700px) { .attendance-grid { grid-template-columns: 1fr !important; } }
       `}</style>
     </div>
   );
