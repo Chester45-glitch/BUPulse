@@ -291,41 +291,48 @@ const wasRecentlySent = async (userId, type, refKey, hours = 24) => {
 };
 
 
-// ── Nodemailer transporter (SMTP App Password) ────────────────────
-// Primary transport for all system emails. Requires:
-//   SYSTEM_EMAIL_USER=your-gmail@gmail.com
-//   SYSTEM_EMAIL_PASS=your-16-char-app-password
-let _transport = null;
-const getTransport = () => {
-  if (_transport) return _transport;
-  const nodemailer = require("nodemailer");
-  _transport = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: process.env.SYSTEM_EMAIL_USER,
-      pass: process.env.SYSTEM_EMAIL_PASS,
-    },
-    // Fail fast — avoids long "Connection timeout" hangs
-    connectionTimeout: 10000,  // 10 s to establish TCP connection
-    greetingTimeout:   10000,  // 10 s to receive SMTP greeting
-    socketTimeout:     15000,  // 15 s of inactivity before giving up
-  });
-  return _transport;
-};
+// ── System email via Gmail API (OAuth2 refresh token) ─────────────
+// Uses HTTPS — never blocked by Render, unlike SMTP ports 465/587.
+//
+// Required env vars (set once in Render → Environment):
+//   SYSTEM_EMAIL_USER          the Gmail address to send from
+//   SYSTEM_GMAIL_REFRESH_TOKEN a long-lived refresh token for that account
+//   GOOGLE_CLIENT_ID           same OAuth client used for login
+//   GOOGLE_CLIENT_SECRET       same OAuth client used for login
+//   GOOGLE_REDIRECT_URI        same OAuth client used for login
+//
+// How to get SYSTEM_GMAIL_REFRESH_TOKEN (one-time setup):
+//   1. Go to https://developers.google.com/oauthplayground
+//   2. Click the gear icon → check "Use your own OAuth credentials"
+//      → enter your GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
+//   3. In Step 1, select "Gmail API v1" → https://mail.google.com/
+//   4. Authorise with the SYSTEM_EMAIL_USER Google account
+//   5. In Step 2, click "Exchange authorization code for tokens"
+//   6. Copy the "Refresh token" value → paste as SYSTEM_GMAIL_REFRESH_TOKEN
 
 const sendSystemEmail = async (to, subject, html) => {
-  if (!process.env.SYSTEM_EMAIL_USER || !process.env.SYSTEM_EMAIL_PASS) {
+  const user         = process.env.SYSTEM_EMAIL_USER;
+  const refreshToken = process.env.SYSTEM_GMAIL_REFRESH_TOKEN;
+
+  if (!user || !refreshToken) {
     throw new Error(
-      "Email not configured: set SYSTEM_EMAIL_USER and SYSTEM_EMAIL_PASS " +
-      "in your Render environment variables (use a Gmail App Password)."
+      "System email not configured. Set SYSTEM_EMAIL_USER and " +
+      "SYSTEM_GMAIL_REFRESH_TOKEN in Render environment variables."
     );
   }
-  const transport = getTransport();
-  await transport.sendMail({
-    from: `"BUPulse" <${process.env.SYSTEM_EMAIL_USER}>`,
-    to,
-    subject,
-    html,
+
+  const auth = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+  auth.setCredentials({ refresh_token: refreshToken });
+
+  const gmail = google.gmail({ version: "v1", auth });
+
+  await gmail.users.messages.send({
+    userId: "me",
+    requestBody: { raw: encodeEmail(to, subject, html) },
   });
 };
 
