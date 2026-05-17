@@ -59,10 +59,7 @@ const DueBadge = ({ date }) => {
   if (d <= 3)   return <span style={S.badge("#d97706", "#ffedd5")}>{d}d left</span>;
   return              <span style={S.badge("#16a34a", "#dcfce7")}>{d}d left</span>;
 };
-const SourceBadge = ({ source }) =>
-  source === "google"
-    ? <span style={S.badge("#1a73e8", "#e8f0fe")}>Google</span>
-    : <span style={S.badge("#16a34a", "#dcfce7")}>BULMS</span>;
+
 
 const Spinner = ({ s = 18 }) => (
   <div style={{ width: s, height: s, border: "2px solid rgba(255,255,255,0.25)", borderTopColor: "currentColor", borderRadius: "50%", animation: "bs 0.8s linear infinite", flexShrink: 0 }} />
@@ -145,6 +142,35 @@ const MAGIC_SCRIPT = `(async () => {
         else if (cls.includes("modtype_quiz")) type = "quiz";
         else if (cls.includes("modtype_forum")) type = "forum";
         if (!type) return;
+
+        // ── Skip activities already marked as done ──────────────────
+        // Moodle marks completion in several ways — check all of them.
+        const isDone = (() => {
+          // 1. data-completionstate: 1 = manual complete, 2 = auto complete
+          const compEl = el.querySelector("[data-completionstate]");
+          if (compEl) {
+            const state = compEl.getAttribute("data-completionstate");
+            if (state === "1" || state === "2") return true;
+          }
+          // 2. Completion icon classes (checked checkbox / green circle)
+          if (el.querySelector(".fa-check-square, .fa-check-circle, .icon-completion-auto-y, .icon-completion-manual-y, .completion_complete")) return true;
+          // 3. Completion image alt text says "done" or "complete"
+          const compImg = el.querySelector(".completion-icon img, .completion img, img.icon");
+          if (compImg) {
+            const alt = (compImg.getAttribute("alt") || "").toLowerCase();
+            if (alt.includes("done") || alt.includes("complete")) return true;
+          }
+          // 4. Green "Done" button (manual completion button after clicking)
+          const doneBtn = el.querySelector("button.btn-success, a.btn-success");
+          if (doneBtn) {
+            const btnText = (doneBtn.innerText || doneBtn.textContent || "").trim().toLowerCase();
+            if (btnText === "done" || btnText === "completed") return true;
+          }
+          // 5. The activity row itself carries a "complete" class
+          if (cls.includes("complete") && !cls.includes("incomplete")) return true;
+          return false;
+        })();
+        if (isDone) return;
 
         const a = el.querySelector("a[href]");
         if (!a) return;
@@ -270,7 +296,7 @@ const MAGIC_SCRIPT = `(async () => {
   console.log(\`%c✅ Done! \${courses.length} subjects, \${activities.length} activities scraped.\`, 'color:#22c55e;font-weight:bold;font-size:13px');
 })();`.trim();
 
-// ── Activity card (shared for both Google + BULMS) ────────────────────────────
+// ── Activity card ─────────────────────────────────────────────────────────────
 function ActivityCard({ item }) {
   const [open, setOpen] = useState(false);
   const typeColor = { quiz: "#8b5cf6", forum: "#0ea5e9", assign: "#f59e0b",
@@ -284,7 +310,7 @@ function ActivityCard({ item }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap", alignItems: "center" }}>
-            <SourceBadge source={item.source} />
+            <span style={S.badge("#16a34a", "#dcfce7")}>BULMS</span>
             <span style={S.badge(typeColor, "var(--bg-tertiary)")}>{item.type?.replace(/_/g," ")}</span>
           </div>
           <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.4, marginBottom: 4 }}>{item.name}</p>
@@ -313,7 +339,7 @@ function ActivityCard({ item }) {
           {item.url && (
             <a href={item.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
               style={{ fontSize: 12, color: "var(--green-600)", textDecoration: "underline" }}>
-              Open in {item.source === "google" ? "Google Classroom" : "BULMS"} →
+              Open in BULMS →
             </a>
           )}
         </div>
@@ -328,7 +354,7 @@ function ActivityCard({ item }) {
 export default function BulmsSync() {
   const [subjects,     setSubjects]     = useState([]);
   const [activities,   setActivities]   = useState([]);
-  const [googleItems,  setGoogleItems]  = useState([]);
+
   const [status,       setStatus]       = useState(null);
   const [tab,          setTab]          = useState("all");
   const [syncFilter,   setSyncFilter]   = useState("all");
@@ -343,18 +369,14 @@ export default function BulmsSync() {
   // ── Load all data ───────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
     try {
-      const [bulmsStatus, bulmsData, gcData] = await Promise.allSettled([
+      const [bulmsStatus, bulmsData] = await Promise.allSettled([
         api.get("/bulms/status"),
         api.get("/bulms/data"),
-        api.get("/classroom/deadlines"),
       ]);
       if (bulmsStatus.status === "fulfilled") setStatus(bulmsStatus.value.data);
       if (bulmsData.status === "fulfilled") {
         setSubjects(bulmsData.value.data.subjects || []);
         setActivities(bulmsData.value.data.activities || []);
-      }
-      if (gcData.status === "fulfilled") {
-        setGoogleItems(gcData.value.data.deadlines || []);
       }
     } catch(e) { console.error(e); }
     finally { setPageLoading(false); }
@@ -362,18 +384,8 @@ export default function BulmsSync() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  // ── Merge + normalize Google + BULMS into unified list ──────────────────────
+  // ── Normalize BULMS activities into unified list ────────────────────────────
   const allItems = [
-    ...googleItems.map(g => ({
-      id:         g.id || g.courseWorkId,
-      name:       g.title,
-      courseName: g.courseName,
-      dueDate:    g.dueDate || null,
-      type:       g.workType || "ASSIGNMENT",
-      source:     "google",
-      url:        g.link || g.alternateLink,
-      status:     g.submissionStatus,
-    })),
     ...activities.map(b => ({
       id:         b.activity_id,
       name:       b.activity_name,
@@ -396,8 +408,6 @@ export default function BulmsSync() {
     if (syncFilter === "all")      return true;
     if (syncFilter === "overdue")  return item.dueDate && new Date(item.dueDate) < now;
     if (syncFilter === "upcoming") return !item.dueDate || new Date(item.dueDate) >= now;
-    if (syncFilter === "google")   return item.source === "google";
-    if (syncFilter === "bulms")    return item.source === "bulms";
     return true;
   });
 
@@ -468,7 +478,7 @@ export default function BulmsSync() {
             BULMS Integration
           </h2>
           <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
-            Your Bicol University academic data, unified with Google Classroom.
+            Your Bicol University academic data from BULMS.
           </p>
         </div>
         {(subjects.length > 0 || activities.length > 0) && (
@@ -494,7 +504,6 @@ export default function BulmsSync() {
         {[
           { label: "BULMS Subjects",  value: subjects.length,       color: "#16a34a", bg: "#dcfce7" },
           { label: "BULMS Tasks",     value: activities.length,     color: "#8b5cf6", bg: "#ede9fe" },
-          { label: "Google Tasks",    value: googleItems.length,    color: "#1a73e8", bg: "#e8f0fe" },
           { label: "Overdue",         value: overdueCount,          color: "#dc2626", bg: "#fee2e2" },
         ].map(({ label, value, color, bg }) => (
           <div key={label} style={{ ...S.card, padding: "14px 16px", marginBottom: 0 }}>
@@ -522,7 +531,7 @@ export default function BulmsSync() {
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
-          TAB: ALL ACTIVITIES (Google + BULMS merged)
+          TAB: ALL ACTIVITIES (BULMS)
       ══════════════════════════════════════════════════════════════════════ */}
       {tab === "all" && (
         <div style={{ animation: "bfade 0.3s ease" }}>
@@ -532,8 +541,6 @@ export default function BulmsSync() {
               ["all",      "All"],
               ["overdue",  `Overdue (${overdueCount})`],
               ["upcoming", "Upcoming"],
-              ["google",   "Google Only"],
-              ["bulms",    "BULMS Only"],
             ].map(([k, l]) => (
               <button key={k} onClick={() => setSyncFilter(k)} style={{
                 padding: "5px 13px", borderRadius: 20, fontSize: 12, cursor: "pointer",
@@ -681,7 +688,7 @@ export default function BulmsSync() {
           <div style={{ ...S.card, maxWidth: 360, width: "90%", marginBottom: 0 }}>
             <h3 style={{ fontSize: 17, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>Unlink BULMS?</h3>
             <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 20, lineHeight: 1.5 }}>
-              This will delete all your synced subjects and activities from BUPulse. Your Google Classroom data is not affected. You can re-sync anytime.
+              This will delete all your synced subjects and activities from BUPulse. You can re-sync anytime.
             </p>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button style={S.btn("ghost")} onClick={() => setShowUnlink(false)}>Cancel</button>
