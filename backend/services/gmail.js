@@ -290,8 +290,41 @@ const wasRecentlySent = async (userId, type, refKey, hours = 24) => {
   return data && data.length > 0;
 };
 
+
+// ── Nodemailer transporter (SMTP App Password) ────────────────────
+// Primary transport for all system emails. Requires:
+//   SYSTEM_EMAIL_USER=your-gmail@gmail.com
+//   SYSTEM_EMAIL_PASS=your-16-char-app-password
+let _transport = null;
+const getTransport = () => {
+  if (_transport) return _transport;
+  const nodemailer = require("nodemailer");
+  _transport = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.SYSTEM_EMAIL_USER,
+      pass: process.env.SYSTEM_EMAIL_PASS,
+    },
+  });
+  return _transport;
+};
+
+const sendSystemEmail = async (to, subject, html) => {
+  if (!process.env.SYSTEM_EMAIL_USER || !process.env.SYSTEM_EMAIL_PASS) {
+    throw new Error("SYSTEM_EMAIL_USER or SYSTEM_EMAIL_PASS not set in .env");
+  }
+  const transport = getTransport();
+  await transport.sendMail({
+    from: `"BUPulse" <${process.env.SYSTEM_EMAIL_USER}>`,
+    to,
+    subject,
+    html,
+  });
+};
+
 module.exports = {
   sendEmail,
+  sendSystemEmail,
   deadlineTemplate,
   noCourseworkTemplate,
   overdueTemplate,
