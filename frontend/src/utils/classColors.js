@@ -21,7 +21,7 @@ const CLASS_PALETTE = [
   { solid: "#0369a1", g1: "#7dd3fc", g2: "#0ea5e9", text: "#fff" },   // sky
   { solid: "#9d174d", g1: "#fbcfe8", g2: "#ec4899", text: "#fff" },   // rose
   { solid: "#065f46", g1: "#a7f3d0", g2: "#10b981", text: "#fff" },   // emerald
-  { solid: "#9a3412", g1: "#fed7aa", g2: "#fb923c", text: "#fff" },   // apricot
+  { solid: "#ea580c", g1: "#fed7aa", g2: "#fb923c", text: "#fff" },   // apricot
   { solid: "#4c1d95", g1: "#ddd6fe", g2: "#a78bfa", text: "#fff" },   // purple
   { solid: "#134e4a", g1: "#99f6e4", g2: "#14b8a6", text: "#fff" },   // teal
   { solid: "#1e40af", g1: "#bfdbfe", g2: "#60a5fa", text: "#fff" },   // indigo
@@ -29,7 +29,7 @@ const CLASS_PALETTE = [
   { solid: "#3f6212", g1: "#d9f99d", g2: "#84cc16", text: "#fff" },   // lime
   { solid: "#6b21a8", g1: "#e9d5ff", g2: "#c084fc", text: "#fff" },   // lilac
   { solid: "#075985", g1: "#bae6fd", g2: "#38bdf8", text: "#fff" },   // steel-blue
-  { solid: "#713f12", g1: "#fef08a", g2: "#eab308", text: "#fff" },   // amber
+  { solid: "#b45309", g1: "#fef08a", g2: "#eab308", text: "#fff" },   // amber
 ];
 
 /**
