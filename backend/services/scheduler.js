@@ -1,6 +1,7 @@
 const cron = require("node-cron");
 const supabase = require("../db/supabase");
 const { getAllDeadlines, getAllAnnouncements } = require("./googleClassroom");
+const { checkAbsences } = require("./absenceChecker");
 const {
   sendEmail,
   deadlineTemplate,
@@ -350,6 +351,12 @@ const startScheduler = () => {
 
   // BULMS auto-sync: every 8 hours (1AM, 9AM, 5PM)
   cron.schedule("0 1,9,17 * * *", syncBulmsForAllUsers, { timezone: "Asia/Manila" });
+
+  // Absence alert check: every 6 hours
+  cron.schedule("0 0,6,12,18 * * *", async () => {
+    console.log("[AbsenceChecker] Running scheduled check…");
+    await checkAbsences().catch(e => console.error("[AbsenceChecker] Scheduler error:", e.message));
+  }, { timezone: "Asia/Manila" });
 
   // Announcements — every 5 minutes (down from 30min for near-realtime delivery)
   cron.schedule("*/5 * * * *", async () => {
