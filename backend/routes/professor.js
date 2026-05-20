@@ -52,27 +52,6 @@ const createClassroomClient = (accessToken, refreshToken) => {
 };
 
 // ── POST announcement with optional Drive file attachments ────────
-// ── Strip HTML tags → plain text for Google Classroom API ─────────
-// Google Classroom's announcement `text` field is plain text only.
-// contentEditable sends innerHTML (e.g. <b><i><u>Hello</u></i></b>),
-// so we must convert it to readable plain text before posting.
-const htmlToPlainText = (html = "") => {
-  if (!html.includes("<")) return html.trim();
-  return html
-    .replace(/<\/?(?:div|p|li|h[1-6]|section|article|header|footer)\s*\/?>/gi, "\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .split("\n").map(l => l.trim()).join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-};
-
 const postAnnouncementWithAttachments = async (courseId, text, driveFiles, accessToken, refreshToken) => {
   const classroom = createClassroomClient(accessToken, refreshToken);
 
@@ -145,16 +124,12 @@ router.post("/announcements", authenticateToken, professorOnly, async (req, res)
     if (!tokens?.access_token)
       return res.status(401).json({ error: "No access token." });
 
-    // Convert HTML from contentEditable to plain text before sending
-    // (Google Classroom API stores text field as plain text only)
-    const plainText = htmlToPlainText(text);
-
     // Post to all selected courses in parallel
     const results = await Promise.allSettled(
       targets.map((id) =>
         postAnnouncementWithAttachments(
           id,
-          plainText,
+          text.trim(),
           driveFiles,
           tokens.access_token,
           tokens.refresh_token
@@ -190,7 +165,7 @@ router.post("/announcements", authenticateToken, professorOnly, async (req, res)
     if (posted > 0) {
       const postedCourseIds = succeeded.map(({ courseId }) => courseId);
       sendAnnouncementNotifications({
-        text:      plainText,
+        text:      text.trim(),
         courseIds: postedCourseIds,
         postedBy:  req.user.id,
       }).catch(e => console.error("Announcement notify error:", e.message));
@@ -266,7 +241,7 @@ router.patch(
       const updated = await editAnnouncement(
         req.params.courseId,
         req.params.annId,
-        htmlToPlainText(text),
+        text.trim(),
         tokens.access_token,
         tokens.refresh_token
       );
