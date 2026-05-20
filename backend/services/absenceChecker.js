@@ -196,6 +196,9 @@ const checkClassAbsences = async (classId, className) => {
     const student = enrollment.users;
     if (!student?.name) continue;
 
+    // Skip the professor — only students can be considered absent
+    if (professorRow && student.id === professorRow.id) continue;
+
     // Check last CONSECUTIVE_THRESHOLD records
     const lastRecords = records.slice(0, CONSECUTIVE_THRESHOLD);
     const allAbsent   = lastRecords.every(r => isAbsentInRecord(student.name, r));

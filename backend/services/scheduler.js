@@ -160,6 +160,7 @@ const checkAll = async () => {
     .from("users")
     .select("id, email, name, access_token, refresh_token, notifications_enabled, notify_instant")
     .eq("notifications_enabled", true)
+    .eq("role", "student")
     .not("access_token", "is", null);
 
   if (!users?.length) return;
@@ -189,11 +190,13 @@ const checkAll = async () => {
 const triggerInstantAnnouncementCheck = async (userId) => {
   const { data: user } = await supabase
     .from("users")
-    .select("id, email, name, access_token, refresh_token, notifications_enabled, notify_instant")
+    .select("id, email, name, access_token, refresh_token, notifications_enabled, notify_instant, role")
     .eq("id", userId)
     .single();
 
   if (!user || !user.notifications_enabled || !user.notify_instant || !user.access_token) return;
+  // Professors do not receive submission/deadline/announcement notifications as recipients
+  if (user.role === "professor") return;
 
   // Run in background — don't block the API response
   checkAnnouncementsForUser(user).catch((e) =>
@@ -374,6 +377,7 @@ const startScheduler = () => {
       .from("users")
       .select("id, email, name, access_token, refresh_token, notifications_enabled, notify_instant")
       .eq("notifications_enabled", true)
+      .eq("role", "student")
       .eq("notify_instant", false)
       .not("access_token", "is", null);
 
