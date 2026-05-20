@@ -75,7 +75,8 @@ function StreamCard({ item, index }) {
   const color = courseColor(item.courseName || "");
   const PREVIEW = 220;
   const text = sanitizeAnnouncement(item.text || "");
-  const needsMore = text.length > PREVIEW;
+  const plainText = text.replace(/<[^>]+>/g, ""); // strip tags for length check
+  const needsMore = plainText.length > PREVIEW;
   const displayText = expanded || !needsMore ? text : text.slice(0, PREVIEW) + "…";
 
   return (
@@ -122,9 +123,10 @@ function StreamCard({ item, index }) {
         )}
         {text && (
           <>
-            <p style={{ fontSize: 13.5, lineHeight: 1.7, color: "var(--text-primary)", whiteSpace: "pre-line", marginBottom: needsMore ? 6 : 10 }}>
-              {displayText}
-            </p>
+            <p
+              style={{ fontSize: 13.5, lineHeight: 1.7, color: "var(--text-primary)", marginBottom: needsMore ? 6 : 10 }}
+              dangerouslySetInnerHTML={{ __html: displayText }}
+            />
             {needsMore && (
               <button onClick={() => setExpanded((e) => !e)} style={{ fontSize: 12.5, color, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: "0 0 8px" }}>
                 {expanded ? "Show less ↑" : "Read more ↓"}
