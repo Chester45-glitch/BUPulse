@@ -3,27 +3,23 @@
  * ─────────────────────────────────────────────────────────────────
  * Cleans raw HTML from Google Classroom / AnnouncementForm output.
  *
- * Converts:
- *   <b>Hello</b><div>Please read below</div>
- * Into:
- *   **Hello**
- *   Please read below
- *
- * Inline formatting preserved:
- *   <b>/<strong>  → **text**
- *   <i>/<em>      → _text_
- *   <u>           → __text__ (underline via markdown-style)
+ * Preserves safe inline formatting tags: <b>, <strong>, <i>, <em>, <u>
+ * Converts block-level tags to line breaks.
+ * Strips all other tags and dangerous attributes.
  *
  * Used in: Announcements.jsx, ParentDashboard.jsx, Dashboard.jsx
  */
 
+// Tags we allow through as-is (safe inline formatting only)
+const ALLOWED_TAGS = new Set(["b", "strong", "i", "em", "u"]);
+
 /**
- * Strips HTML and returns clean plain text with preserved line breaks
- * and inline formatting (bold, italic, underline).
- * Works in the browser (uses DOMParser) and falls back to regex for SSR.
+ * Sanitizes raw HTML and returns safe HTML with inline formatting preserved.
+ * Block tags become <br>, all other tags are stripped.
+ * Safe to use with dangerouslySetInnerHTML.
  *
  * @param {string} html  Raw HTML string from API
- * @returns {string}     Clean text with markdown-style inline formatting
+ * @returns {string}     Safe HTML string
  */
 export function sanitizeAnnouncement(html) {
   if (!html || typeof html !== "string") return "";
@@ -32,23 +28,19 @@ export function sanitizeAnnouncement(html) {
   if (!html.includes("<")) return html.trim();
 
   let text = html
-    // ── 1. Normalize block-level tags → newlines BEFORE any other processing ──
-    .replace(/<\/?(div|p|br|li|tr|section|article|header|footer|h[1-6])\s*\/?>/gi, "\n")
-    // Remove inline style attributes (they add noise like "text-align: center;")
+    // ── 1. Block-level tags → <br> BEFORE anything else ─────────
+    .replace(/<\/?(div|p|li|tr|section|article|header|footer|h[1-6])\s*\/?>/gi, "<br>")
+    // Self-closing <br> variants → <br>
+    .replace(/<br\s*\/?>/gi, "<br>")
+    // ── 2. Remove style/class attributes everywhere ───────────────
     .replace(/\s*style="[^"]*"/gi, "")
-    // Remove class attributes
     .replace(/\s*class="[^"]*"/gi, "")
-
-    // ── 2. Preserve inline formatting BEFORE stripping remaining tags ──
-    // Bold: <b>…</b> or <strong>…</strong>
-    .replace(/<(b|strong)>([\s\S]*?)<\/\1>/gi, "**$2**")
-    // Italic: <i>…</i> or <em>…</em>
-    .replace(/<(i|em)>([\s\S]*?)<\/\1>/gi, "_$2_")
-    // Underline: <u>…</u>
-    .replace(/<u>([\s\S]*?)<\/u>/gi, "__$1__")
-
-    // ── 3. Strip all remaining tags ──────────────────────────────
-    .replace(/<[^>]+>/g, "");
+    // ── 3. Strip all tags EXCEPT the allowed inline ones ─────────
+    // Replace disallowed opening tags (keep allowed ones)
+    .replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/g, (match, tag) => {
+      if (ALLOWED_TAGS.has(tag.toLowerCase())) return match;
+      return ""; // strip the tag
+    });
 
   // ── 4. Decode HTML entities ──────────────────────────────────────
   text = text
@@ -58,26 +50,25 @@ export function sanitizeAnnouncement(html) {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, " ")
-    .replace(/#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
 
-  // ── 5. Collapse excessive whitespace / blank lines ───────────────
+  // ── 5. Collapse excessive <br> tags ─────────────────────────────
   text = text
-    .split("\n")
-    .map(l => l.trim())
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n") // max 2 consecutive blank lines
+    .replace(/(<br>\s*){3,}/gi, "<br><br>") // max 2 consecutive breaks
     .trim();
 
   return text;
 }
 
 /**
- * Returns a short preview of an announcement (plain text, no HTML).
+ * Returns a short plain-text preview of an announcement (strips all HTML).
  * @param {string} html  Raw HTML string
  * @param {number} maxLen  Max character length
  */
 export function announcementPreview(html, maxLen = 160) {
-  const clean = sanitizeAnnouncement(html);
-  if (clean.length <= maxLen) return clean;
-  return clean.slice(0, maxLen).trimEnd() + "…";
+  if (!html || typeof html !== "string") return "";
+  // Strip all tags for plain-text preview
+  const plain = html.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").trim();
+  if (plain.length <= maxLen) return plain;
+  return plain.slice(0, maxLen).trimEnd() + "…";
 }
