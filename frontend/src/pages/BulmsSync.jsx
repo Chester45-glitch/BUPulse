@@ -305,7 +305,7 @@ function ActivityCard({ item }) {
   return (
     <div onClick={() => setOpen(x => !x)} style={{
       ...S.card, cursor: "pointer",
-      borderLeft: `3px solid ${item.dueDate && daysLeft(item.dueDate) < 0 ? "#dc2626" : daysLeft(item.dueDate) !== null && daysLeft(item.dueDate) <= 1 ? "#f59e0b" : "transparent"}`,
+      borderLeft: `3px solid ${item.dueDate && daysLeft(item.dueDate) !== null && daysLeft(item.dueDate) <= 1 ? "#f59e0b" : "transparent"}`,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -365,6 +365,7 @@ export default function BulmsSync() {
   const [showUnlink,   setShowUnlink]   = useState(false);
   const [unlinking,    setUnlinking]    = useState(false);
   const [copied,       setCopied]       = useState(false);
+  const [notifying,    setNotifying]    = useState(false);
 
   // ── Load all data ───────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
@@ -384,7 +385,10 @@ export default function BulmsSync() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  // ── Normalize BULMS activities into unified list ────────────────────────────
+  const now = new Date();
+
+  // ── Normalize BULMS activities into unified list (pending/due only) ──────────
+  // Overdue items are intentionally excluded from this view.
   const allItems = [
     ...activities.map(b => ({
       id:         b.activity_id,
@@ -396,22 +400,26 @@ export default function BulmsSync() {
       url:        b.activity_url,
       status:     b.submission_status,
     })),
-  ].sort((a, b) => {
+  ]
+  // Only show pending: no due date, or due date is today/future
+  .filter(item => !item.dueDate || new Date(item.dueDate) >= now)
+  .sort((a, b) => {
     if (!a.dueDate && !b.dueDate) return 0;
     if (!a.dueDate) return 1;
     if (!b.dueDate) return -1;
     return new Date(a.dueDate) - new Date(b.dueDate);
   });
 
-  const now = new Date();
+  const dueTodayCount  = allItems.filter(i => i.dueDate && daysLeft(i.dueDate) === 0).length;
+  const dueSoonCount   = allItems.filter(i => i.dueDate && daysLeft(i.dueDate) > 0 && daysLeft(i.dueDate) <= 3).length;
+
   const filteredItems = allItems.filter(item => {
     if (syncFilter === "all")      return true;
-    if (syncFilter === "overdue")  return item.dueDate && new Date(item.dueDate) < now;
-    if (syncFilter === "upcoming") return !item.dueDate || new Date(item.dueDate) >= now;
+    if (syncFilter === "today")    return item.dueDate && daysLeft(item.dueDate) === 0;
+    if (syncFilter === "soon")     return item.dueDate && daysLeft(item.dueDate) > 0 && daysLeft(item.dueDate) <= 3;
+    if (syncFilter === "later")    return !item.dueDate || daysLeft(item.dueDate) > 3;
     return true;
   });
-
-  const overdueCount = allItems.filter(i => i.dueDate && new Date(i.dueDate) < now).length;
 
   // ── Manual sync handler ─────────────────────────────────────────────────────
   const handleManualSync = async () => {
@@ -452,6 +460,20 @@ export default function BulmsSync() {
   const copyScript = () => {
     navigator.clipboard.writeText(MAGIC_SCRIPT);
     setCopied(true); setTimeout(() => setCopied(false), 2000);
+  };
+
+  // ── Email reminder for pending BULMS activities ─────────────────────────────
+  const handleNotifyDue = async () => {
+    setNotifying(true);
+    try {
+      const res = await api.post("/bulms/notify-due");
+      setSyncMsg("✅ " + (res.data.message || "Email reminder sent!"));
+    } catch (e) {
+      setSyncMsg("❌ " + (e.response?.data?.error || "Failed to send email. Try again."));
+    } finally {
+      setNotifying(false);
+      setTimeout(() => setSyncMsg(null), 6000);
+    }
   };
 
   // ── Loading skeleton ────────────────────────────────────────────────────────
@@ -502,9 +524,10 @@ export default function BulmsSync() {
       {/* ── Stats row ──────────────────────────────────────────────────────── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 10, marginBottom: 20 }}>
         {[
-          { label: "BULMS Subjects",  value: subjects.length,       color: "#16a34a", bg: "#dcfce7" },
-          { label: "BULMS Tasks",     value: activities.length,     color: "#8b5cf6", bg: "#ede9fe" },
-          { label: "Overdue",         value: overdueCount,          color: "#dc2626", bg: "#fee2e2" },
+          { label: "BULMS Subjects",  value: subjects.length,   color: "#16a34a", bg: "#dcfce7" },
+          { label: "Pending Tasks",   value: allItems.length,   color: "#8b5cf6", bg: "#ede9fe" },
+          { label: "Due Today",       value: dueTodayCount,     color: "#dc2626", bg: "#fee2e2" },
+          { label: "Due Soon (≤3d)",  value: dueSoonCount,      color: "#d97706", bg: "#ffedd5" },
         ].map(({ label, value, color, bg }) => (
           <div key={label} style={{ ...S.card, padding: "14px 16px", marginBottom: 0 }}>
             <p style={{ fontSize: 10.5, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{label}</p>
@@ -535,21 +558,34 @@ export default function BulmsSync() {
       ══════════════════════════════════════════════════════════════════════ */}
       {tab === "all" && (
         <div style={{ animation: "bfade 0.3s ease" }}>
-          {/* Filters */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-            {[
-              ["all",      "All"],
-              ["overdue",  `Overdue (${overdueCount})`],
-              ["upcoming", "Upcoming"],
-            ].map(([k, l]) => (
-              <button key={k} onClick={() => setSyncFilter(k)} style={{
-                padding: "5px 13px", borderRadius: 20, fontSize: 12, cursor: "pointer",
-                fontWeight: syncFilter === k ? 600 : 400,
-                background: syncFilter === k ? "var(--green-600)" : "var(--card-bg)",
-                color: syncFilter === k ? "#fff" : "var(--text-muted)",
-                border: `1px solid ${syncFilter === k ? "var(--green-600)" : "var(--card-border)"}`,
-              }}>{l}</button>
-            ))}
+          {/* Filters + Email Reminder button */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              {[
+                ["all",   `All (${allItems.length})`],
+                ["today", `Due Today${dueTodayCount > 0 ? ` (${dueTodayCount})` : ""}`],
+                ["soon",  `Due Soon${dueSoonCount  > 0 ? ` (${dueSoonCount})`  : ""}`],
+                ["later", "Later"],
+              ].map(([k, l]) => (
+                <button key={k} onClick={() => setSyncFilter(k)} style={{
+                  padding: "5px 13px", borderRadius: 20, fontSize: 12, cursor: "pointer",
+                  fontWeight: syncFilter === k ? 600 : 400,
+                  background: syncFilter === k ? "var(--green-600)" : "var(--card-bg)",
+                  color: syncFilter === k ? "#fff" : "var(--text-muted)",
+                  border: `1px solid ${syncFilter === k ? "var(--green-600)" : "var(--card-border)"}`,
+                }}>{l}</button>
+              ))}
+            </div>
+            {allItems.length > 0 && (
+              <button
+                style={{ ...S.btn("ghost", { fontSize: 12, padding: "5px 13px", borderRadius: 20 }), gap: 5 }}
+                onClick={handleNotifyDue}
+                disabled={notifying}
+              >
+                {notifying ? <Spinner s={12} /> : "📧"}
+                {notifying ? "Sending…" : "Email Reminder"}
+              </button>
+            )}
           </div>
 
           {filteredItems.length === 0 ? (
@@ -583,14 +619,14 @@ export default function BulmsSync() {
             </div>
           ) : subjects.map(s => {
             const courseActs = activities.filter(a => a.course_id === s.course_id);
-            const overdue    = courseActs.filter(a => a.due_date && new Date(a.due_date) < now).length;
+            const dueSoon    = courseActs.filter(a => a.due_date && daysLeft(a.due_date) !== null && daysLeft(a.due_date) <= 1).length;
             return (
               <div key={s.course_id} style={{ ...S.card, borderTop: "4px solid var(--green-600)", marginBottom: 0 }}>
                 <div style={{ width: 38, height: 38, borderRadius: 10, background: "linear-gradient(135deg,var(--green-600),#0ea5e9)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12, fontSize: 18 }}>📖</div>
                 <p style={{ fontWeight: 800, fontSize: 14, color: "var(--text-primary)", lineHeight: 1.4, marginBottom: 8 }}>{s.course_name}</p>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
                   <span style={S.badge("var(--text-muted)", "var(--bg-tertiary)")}>{courseActs.length} activities</span>
-                  {overdue > 0 && <span style={S.badge("#dc2626", "#fee2e2")}>{overdue} overdue</span>}
+                  {dueSoon > 0 && <span style={S.badge("#d97706", "#ffedd5")}>{dueSoon} due soon</span>}
                 </div>
                 {s.course_url && (
                   <a href={s.course_url} target="_blank" rel="noreferrer"
