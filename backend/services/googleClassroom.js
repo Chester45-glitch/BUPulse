@@ -296,8 +296,24 @@ const getAllDeadlines = async (accessToken, refreshToken) => {
 const getCourseStudents = async (courseId, accessToken, refreshToken) => {
   try {
     const classroom = createClient(accessToken, refreshToken);
-    const res = await classroom.courses.students.list({ courseId, pageSize: 50 });
-    return res.data.students || [];
+    const allStudents = [];
+    let pageToken;
+
+    // Paginate through all students (Google returns max 200 per page)
+    do {
+      const res = await classroom.courses.students.list({
+        courseId,
+        pageSize: 200,
+        pageToken,
+        // Explicitly request profile fields so names are always returned
+        fields: "nextPageToken,students(userId,profile(name/fullName,emailAddress))",
+      });
+      const students = res.data.students || [];
+      allStudents.push(...students);
+      pageToken = res.data.nextPageToken;
+    } while (pageToken);
+
+    return allStudents;
   } catch (e) {
     console.error(`Students error for ${courseId}:`, e.message);
     return [];
