@@ -149,7 +149,7 @@ export default function ProfessorDashboard({ defaultTab } = {}) {
         <div style={{ position: "relative" }}>
           <p style={{ color: "var(--green-200)", fontSize: 13, marginBottom: 4 }}>{now.toLocaleDateString("en-PH", { weekday: "long", month: "long", day: "numeric" })}</p>
           <h2 style={{ color: "#fff", fontFamily: "var(--font-display)", fontSize: "clamp(18px,3vw,26px)", marginBottom: 4 }}>
-            Welcome, Prof. {user?.name?.split(" ").slice(-1)[0]}! 👨‍🏫
+            Welcome, Prof. {user?.name?.split(" ").slice(-1)[0]}!
           </h2>
           <p style={{ color: "var(--green-200)", fontSize: 13 }}>
             {loading ? "Loading…" : `Managing ${courses.length} class${courses.length !== 1 ? "es" : ""}`}
@@ -161,8 +161,8 @@ export default function ProfessorDashboard({ defaultTab } = {}) {
       <div style={{ display: "flex", gap: 4, marginBottom: 20, background: "var(--bg-tertiary)", borderRadius: 10, padding: 4 }}>
         {[
           ["overview", "📊 Overview"],
-          ["post", "📢 Post Announcement"],
-          ["classes", "📚 My Classes"],
+          ["post", "Post Announcement"],
+          ["classes", "My Classes"],
         ].map(([tab, label]) => (
           <button key={tab} onClick={() => setActiveTab(tab)} style={{ flex: 1, padding: "9px 12px", borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: "pointer", background: activeTab === tab ? "var(--card-bg)" : "transparent", color: activeTab === tab ? "var(--text-primary)" : "var(--text-muted)", boxShadow: activeTab === tab ? "var(--shadow-sm)" : "none", border: "none", transition: "all 0.15s" }}>
             {label}
@@ -182,12 +182,12 @@ export default function ProfessorDashboard({ defaultTab } = {}) {
         <div style={{ animation: "fadeIn 0.3s ease" }}>
           <div className="prof-stats" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 20 }}>
             {[
-              { icon: "📚", label: "Active Classes", value: loading ? "…" : courses.length },
-              { icon: "📢", label: "Total Posts", value: loading ? "…" : announcements.length },
-              { icon: "📝", label: "This Month", value: loading ? "…" : announcements.filter((a) => new Date(a.updateTime) >= new Date(now.getFullYear(), now.getMonth(), 1)).length },
+              { icon: null, label: "Active Classes", value: loading ? "…" : courses.length },
+              { icon: null, label: "Total Posts", value: loading ? "…" : announcements.length },
+              { icon: null, label: "This Month", value: loading ? "…" : announcements.filter((a) => new Date(a.updateTime) >= new Date(now.getFullYear(), now.getMonth(), 1)).length },
             ].map((s) => (
               <div key={s.label} style={{ background: "var(--card-bg)", borderRadius: 12, border: "1px solid var(--card-border)", padding: "16px", position: "relative", overflow: "hidden" }}>
-                <div style={{ position: "absolute", top: 0, right: 0, width: 50, height: 50, background: "rgba(22,163,74,0.08)", borderRadius: "0 12px 0 30px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{s.icon}</div>
+                {s.icon && <div style={{ position: "absolute", top: 0, right: 0, width: 50, height: 50, background: "rgba(22,163,74,0.08)", borderRadius: "0 12px 0 30px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{s.icon}</div>}
                 <div style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>{s.label}</div>
                 <div style={{ fontSize: 32, fontWeight: 800, color: "var(--text-primary)" }}>{s.value}</div>
               </div>

@@ -418,6 +418,7 @@ function ActivitiesPanel({ overdueDue, upcomingDue, jumpToDate }) {
 // ── Main Schedule Page ─────────────────────────────────────────────
 export default function Schedule() {
   const { user } = useAuth();
+  const isProfessor = user?.role === "professor";
   const [schedules, setSchedules]   = useState([]);
   const [deadlines, setDeadlines]   = useState([]);
   const [loading, setLoading]       = useState(true);
@@ -435,9 +436,13 @@ export default function Schedule() {
 
   const load = async () => {
     try {
+      // Professors don't submit work, so deadlines from Google Classroom
+      // reflect student submission deadlines — not relevant for professors.
       const [schRes, dlRes] = await Promise.all([
         api.get("/schedule"),
-        api.get("/classroom/deadlines").catch(()=>({data:{deadlines:[]}})),
+        isProfessor
+          ? Promise.resolve({ data: { deadlines: [] } })
+          : api.get("/classroom/deadlines").catch(()=>({data:{deadlines:[]}})),
       ]);
       setSchedules(schRes.data.schedules || []);
       setDeadlines(dlRes.data.deadlines || []);
@@ -821,7 +826,7 @@ export default function Schedule() {
               {/* Full-width calendar */}
               <CalendarView schedules={schedules} deadlines={deadlines} onJumpToDate={jumpToDate} jumpTarget={jumpTarget}/>
               {/* Activities panel BELOW calendar */}
-              <ActivitiesPanel overdueDue={overdueDue} upcomingDue={upcomingDue} jumpToDate={jumpToDate}/>
+              {!isProfessor && <ActivitiesPanel overdueDue={overdueDue} upcomingDue={upcomingDue} jumpToDate={jumpToDate}/>}
             </>
           ) : renderWeek()}
         </>
