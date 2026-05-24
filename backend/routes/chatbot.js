@@ -313,17 +313,52 @@ const getClassroomContext = async (user, needs = null, cache = null) => {
               : Promise.resolve([]),
           ]);
 
-          const studentNames = students
+          // Extract names from Google Classroom API response
+          let studentNames = students
             .map(s => s.profile?.name?.fullName || null)
             .filter(Boolean);
 
-          // Build submission lines — match notSubmittedIds to student names where possible
+          // Fallback: if Google returned no names (profile not included),
+          // pull them from the users table in Supabase via user_courses
+          if (studentNames.length === 0 && students.length > 0) {
+            const userIds = students.map(s => s.userId).filter(Boolean);
+            if (userIds.length) {
+              const { data: supaUsers } = await supabase
+                .from("users").select("id, name, email")
+                .in("id", userIds);
+              if (supaUsers?.length) {
+                studentNames = supaUsers.map(u => u.name || u.email).filter(Boolean);
+              }
+            }
+          }
+
+          // If still empty, fetch from user_courses → users join
+          if (studentNames.length === 0) {
+            const { data: enrolled } = await supabase
+              .from("user_courses")
+              .select("user_id, users:user_id(name, email)")
+              .eq("course_id", c.id);
+            if (enrolled?.length) {
+              studentNames = enrolled
+                .map(e => e.users?.name || e.users?.email)
+                .filter(Boolean);
+            }
+          }
+
+          // Build userId → name map for submission matching
           const studentIdToName = {};
           students.forEach(s => {
             if (s.userId && s.profile?.name?.fullName) {
               studentIdToName[s.userId] = s.profile.name.fullName;
             }
           });
+          // Also fill from Supabase if Google didn't give us the mapping
+          if (Object.keys(studentIdToName).length === 0) {
+            const { data: supaUsers } = await supabase
+              .from("users").select("id, name")
+              .in("id", students.map(s => s.userId).filter(Boolean));
+            (supaUsers || []).forEach(u => { if (u.name) studentIdToName[u.id] = u.name; });
+          }
 
           const submissionLines = submissions.map(w => {
             const pct = w.totalStudents > 0
@@ -371,7 +406,7 @@ const getClassroomContext = async (user, needs = null, cache = null) => {
       lines.push(`### Your Classes (${courses.length} total):`);
       courseDetails.forEach(({ c, studentNames, submissionLines, attLines }) => {
         lines.push(`\n#### [ID: ${c.id}] ${c.name}${c.section?` (${c.section})`:""}`);
-        lines.push(`  Students (${studentNames.length}): ${studentNames.slice(0,20).join(", ")||"None enrolled"}`);
+        lines.push(`  Students (${studentNames.length}): ${studentNames.join(", ")||"None enrolled"}`);
         if (submissionLines.length) {
           lines.push(`  Recent Assignments & Submissions:`);
           submissionLines.forEach(l => lines.push(l));
