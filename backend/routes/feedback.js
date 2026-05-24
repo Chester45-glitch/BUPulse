@@ -17,10 +17,10 @@ const { sendSystemEmail } = require("../services/gmail");
 const DEVELOPER_EMAIL = process.env.DEVELOPER_EMAIL || "bupulse.dev@gmail.com";
 
 const CATEGORY_LABELS = {
-  bug:        "🐛 Bug Report",
-  suggestion: "💡 Suggestion",
-  praise:     "🌟 Praise",
-  general:    "💬 General Feedback",
+  bug:        "Bug Report",
+  suggestion: "Suggestion",
+  praise:     "Praise",
+  general:    "General Feedback",
 };
 
 router.post("/", authenticateToken, async (req, res) => {
@@ -61,7 +61,7 @@ router.post("/", authenticateToken, async (req, res) => {
     const html = `
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
   <div style="background:#1e40af;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0">
-    <h2 style="margin:0">📬 BUPulse Feedback Received</h2>
+    <h2 style="margin:0">BUPulse Feedback Received</h2>
   </div>
   <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;padding:24px;border-radius:0 0 12px 12px">
     <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
