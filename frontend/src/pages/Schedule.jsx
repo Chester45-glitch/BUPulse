@@ -472,7 +472,7 @@ export default function Schedule() {
     setUploading(true);setError("");
     try {
       const base64 = await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(file);});
-      await api.post("/upload/drive",{fileName:file.name,fileType:file.type,fileData:base64});
+      // Send directly to extract — no Drive upload needed for schedule reading
       setExtracting(true);
       const extractRes = await api.post("/schedule/extract",{fileName:file.name,fileData:base64,fileType:file.type});
       const entries = (extractRes.data.entries||[]).map((e,i)=>({...e,color:COLORS[i%COLORS.length]}));
