@@ -9,8 +9,11 @@
  *
  * PERMISSIONS (mirrors backend exactly):
  *   Professor   → create, edit any, delete any, verify
- *   Student     → create, edit own unverified, delete own unverified
+ *   Student     → create, edit ANY unverified class record, delete own unverified
  *   Verified    → students cannot edit or delete; only professor can
+ *
+ * Students can edit any unverified attendance in their class so they
+ * can add their own name if the poster accidentally left them out.
  */
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
@@ -98,8 +101,10 @@ function DeleteModal({ record, loading, onConfirm, onCancel }) {
 }
 
 // ── Create / Edit modal ───────────────────────────────────────────
-function RecordModal({ courses, existing, onSave, onClose }) {
+function RecordModal({ courses, existing, currentUser, onSave, onClose }) {
   const isEdit = !!existing;
+  // True when a student edits a record they did not originally post
+  const isForeignEdit = isEdit && existing?.posted_by && currentUser?.id && existing.posted_by !== currentUser.id;
   const [classId,      setClassId]      = useState(existing?.class_id      || courses?.[0]?.id   || "");
   const [className,    setClassName]    = useState(existing?.class_name    || courses?.[0]?.name || "");
   const [date,         setDate]         = useState(existing?.record_date   || new Date().toISOString().split("T")[0]);
@@ -151,6 +156,12 @@ function RecordModal({ courses, existing, onSave, onClose }) {
           <h3 style={{ fontSize:16, fontWeight:700, color:"var(--text-primary)" }}>{isEdit?"Edit":"New"} Attendance Record</h3>
           <button onClick={onClose} style={{ background:"none", border:"none", color:"var(--text-muted)", cursor:"pointer", padding:4 }}><Ico d={D.x} size={20}/></button>
         </div>
+        {isForeignEdit && (
+          <div style={{ background:"#eff6ff", border:"1px solid #bfdbfe", borderRadius:9, padding:"9px 13px", fontSize:12.5, color:"#1d4ed8", display:"flex", alignItems:"flex-start", gap:8, marginBottom:14 }}>
+            <Ico d={D.info} size={14} stroke="#1d4ed8"/>
+            <span>You're editing a classmate's attendance record. You may add your own name if you were accidentally left out — all changes are visible to the whole class and will lock once the professor verifies.</span>
+          </div>
+        )}
         <div style={{ display:"flex", flexDirection:"column", gap:13, marginBottom:16 }}>
           <div>
             <label style={LBL}>Class *</label>
@@ -217,7 +228,8 @@ function AttendanceCard({ record, currentUser, onEdit, onDelete, onVerify, index
   const isVerified   = record.is_verified === true;
 
   // Mirrors backend permission matrix exactly
-  const canEdit   = isProfessor || (isOwnRecord && !isVerified);
+  // Any enrolled student can edit an unverified record (to add their name)
+  const canEdit   = isProfessor || !isVerified;
   const canDelete = isProfessor || (isOwnRecord && !isVerified);
   const canVerify = isProfessor && !isVerified;
 
@@ -241,9 +253,18 @@ function AttendanceCard({ record, currentUser, onEdit, onDelete, onVerify, index
           {record.verifier && <span style={{ fontSize:11.5, color:"#15803d" }}>by {record.verifier.name} · {timeAgo(record.verified_at)}</span>}
           {!isProfessor && (
             <span style={{ marginLeft:"auto", fontSize:11, color:"#16a34a", display:"flex", alignItems:"center", gap:4 }}>
-              <Ico d={D.lock} size={11} stroke="#16a34a"/> Locked
+              <Ico d={D.lock} size={11} stroke="#16a34a"/> Editing locked
             </span>
           )}
+        </div>
+      )}
+
+      {/* Open-for-edits banner (unverified, non-professor) */}
+      {!isVerified && !isProfessor && (
+        <div style={{ background:"rgba(59,130,246,0.07)", borderBottom:"1px solid rgba(59,130,246,0.18)", padding:"5px 16px", display:"flex", alignItems:"center", gap:7 }}>
+          <Ico d={D.edit} size={12} stroke="#3b82f6"/>
+          <span style={{ fontSize:11.5, color:"#2563eb", fontWeight:600 }}>Open for edits</span>
+          <span style={{ fontSize:11, color:"#60a5fa" }}>— Add your name if you're missing</span>
         </div>
       )}
 
@@ -609,7 +630,7 @@ export default function Attendance() {
         </div>
       )}
 
-      {showModal && <RecordModal courses={courses} existing={editRecord} onSave={handleSave} onClose={() => { setShowModal(false); setEditRecord(null); }}/>}
+      {showModal && <RecordModal courses={courses} existing={editRecord} currentUser={user} onSave={handleSave} onClose={() => { setShowModal(false); setEditRecord(null); }}/>}
       {deleteTarget && <DeleteModal record={deleteTarget} loading={deleting} onConfirm={handleDeleteConfirm} onCancel={() => setDeleteTarget(null)}/>}
 
       <style>{`
