@@ -377,9 +377,10 @@ router.delete("/class/:id", authenticateToken, async (req, res) => {
       return res.status(404).json({ error: "Attendance record not found" });
     }
 
-    const userRow    = await getUserRole(req.user.id);
+    const userRow     = await getUserRole(req.user.id);
     const isProfessor = userRow?.role === "professor";
     const isVerified  = existing.is_verified === true;
+    const isOwnRecord = existing.posted_by === req.user.id;
 
     // ── Server-side permission check ────────────────────────────
     if (isProfessor) {
