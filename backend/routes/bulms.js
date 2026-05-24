@@ -13,12 +13,6 @@ const {
   validateSession,
   encryptCookies,
 } = require("../services/bulmsService");
-const {
-  sendSystemEmail,
-  bulmsDeadlineTemplate,
-  logNotification,
-  wasRecentlySent,
-} = require("../services/gmail");
 
 router.use(authenticateToken);
 
@@ -115,75 +109,11 @@ router.get("/status", async (req, res) => {
 
 router.get("/data", async (req, res) => {
   const userId = req.user.id;
-  const nowIso = new Date().toISOString();
   const [subjectsRes, activitiesRes] = await Promise.all([
     supabase.from("bulms_subjects").select("*").eq("user_id", userId).order("course_name"),
-    supabase
-      .from("bulms_activities")
-      .select("*")
-      .eq("user_id", userId)
-      // Only pending: no due date, OR due date is today/future (not overdue)
-      .or(`due_date.is.null,due_date.gte.${nowIso}`)
-      .order("due_date", { ascending: true, nullsFirst: false }),
+    supabase.from("bulms_activities").select("*").eq("user_id", userId).order("due_date", { ascending: true, nullsFirst: false }),
   ]);
   res.json({ subjects: subjectsRes.data || [], activities: activitiesRes.data || [] });
-});
-
-// ── POST /bulms/notify-due — email the user their pending BULMS activities ────
-router.post("/notify-due", async (req, res) => {
-  const userId = req.user.id;
-  const nowIso = new Date().toISOString();
-
-  try {
-    // 1. Get user details (need email + name to send the email)
-    const { data: user, error: userErr } = await supabase
-      .from("users")
-      .select("id, email, name, notifications_enabled")
-      .eq("id", userId)
-      .single();
-
-    if (userErr || !user?.email) {
-      return res.status(400).json({ error: "User email not found." });
-    }
-
-    // 2. Fetch pending (non-overdue) BULMS activities for this user
-    const { data: activities } = await supabase
-      .from("bulms_activities")
-      .select("*")
-      .eq("user_id", userId)
-      .or(`due_date.is.null,due_date.gte.${nowIso}`)
-      .order("due_date", { ascending: true, nullsFirst: false });
-
-    if (!activities?.length) {
-      return res.json({ success: true, message: "No pending BULMS activities — nothing to send!" });
-    }
-
-    // 3. Debounce: don't spam the same user more than once per hour
-    const refKey = `bulms-due-${new Date().toDateString()}`;
-    if (await wasRecentlySent(userId, "bulms_due_reminder", refKey, 1)) {
-      return res.json({ success: true, message: "A reminder was already sent recently. Please wait before sending again." });
-    }
-
-    // 4. Build and send the email using the system Gmail account
-    const firstName = user.name?.split(" ")[0] || "Student";
-    const subject   = `📚 BUPulse: ${activities.length} pending BULMS activit${activities.length > 1 ? "ies" : "y"}`;
-    const html      = bulmsDeadlineTemplate(firstName, activities);
-
-    await sendSystemEmail(user.email, subject, html);
-    await logNotification(userId, "bulms_due_reminder", {
-      reference_key: refKey,
-      count: activities.length,
-    });
-
-    console.log(`[BULMS] 📧 Due reminder → ${user.email} (${activities.length} activities)`);
-    res.json({
-      success: true,
-      message: `Email sent to ${user.email} with ${activities.length} pending activit${activities.length > 1 ? "ies" : "y"}.`,
-    });
-  } catch (err) {
-    console.error("[BULMS] notify-due error:", err.message);
-    res.status(500).json({ error: "Failed to send notification email. " + err.message });
-  }
 });
 
 router.delete("/unlink", async (req, res) => {
