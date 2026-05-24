@@ -2,10 +2,8 @@ const express = require("express");
 const router  = require("express").Router();
 const supabase = require("../db/supabase");
 const { authenticateToken } = require("../middleware/auth");
-const Groq = require("groq-sdk");
+const { groqChatWithRotation, geminiGenerateWithRotation } = require("../services/aiRotation");
 const { extractFileContent } = require("../services/fileExtractor");
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // ── GET /api/schedule ─────────────────────────────────────────────
 router.get("/", authenticateToken, async (req, res) => {
@@ -81,9 +79,6 @@ router.post("/extract", authenticateToken, async (req, res) => {
   // Text extraction (Gemini OCR → Groq parse) loses the column structure.
   if (fileData && fileType?.startsWith("image/")) {
     try {
-      const { GoogleGenerativeAI } = require("@google/generative-ai");
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_KEY || "");
-
       const imagePrompt = `You are reading a class schedule image. Extract every class entry as a JSON array.
 
 CRITICAL: Look at the COLUMN HEADERS carefully. The schedule has separate columns for each day (Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday). Each class block appears under its correct day column — do NOT assign them all to Monday.
@@ -99,52 +94,22 @@ Each item in the array must have:
 
 Return ONLY a valid JSON array. No markdown, no explanation, no extra text.`;
 
-      const GEMINI_MODELS = [
-        "gemini-2.5-flash-preview-04-17",
-        "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
-        "gemini-1.5-flash-001",
-      ];
-
       let entries = null;
-      let lastError;
-
-      for (const modelName of GEMINI_MODELS) {
-        try {
-          const model = genAI.getGenerativeModel({ model: modelName }, { apiVersion: "v1beta" });
-          const result = await model.generateContent([
-            { inlineData: { mimeType: fileType, data: fileData } },
-            imagePrompt,
-          ]);
-          const raw = result.response.text()?.trim() || "";
-          const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
-          entries = JSON.parse(cleaned);
-          if (!Array.isArray(entries)) throw new Error("Not array");
-          console.log(`Schedule image parsed by Gemini model: ${modelName}, found ${entries.length} entries`);
-          break;
-        } catch (err) {
-          if (err.message?.includes("404") || err.message?.includes("not found")) {
-            lastError = err; continue;
-          }
-          // JSON parse error — try to extract array
-          if (err instanceof SyntaxError) {
-            try {
-              const model = genAI.getGenerativeModel({ model: GEMINI_MODELS[0] }, { apiVersion: "v1beta" });
-              const result = await model.generateContent([
-                { inlineData: { mimeType: fileType, data: fileData } },
-                imagePrompt,
-              ]);
-              const raw = result.response.text()?.trim() || "";
-              const arr = raw.match(/\[[\s\S]*\]/);
-              if (arr) { entries = JSON.parse(arr[0]); break; }
-            } catch {}
-          }
-          lastError = err;
-        }
+      const rawImg = await geminiGenerateWithRotation([
+        { inlineData: { mimeType: fileType, data: fileData } },
+        imagePrompt,
+      ]);
+      const cleanedImg = rawImg.trim()
+        .replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+      try {
+        entries = JSON.parse(cleanedImg);
+        if (!Array.isArray(entries)) throw new Error("Not array");
+      } catch {
+        const arr = cleanedImg.match(/\[[\s\S]*\]/);
+        if (arr) entries = JSON.parse(arr[0]);
       }
-
-      if (!entries) throw new Error(`Gemini could not parse schedule: ${lastError?.message}`);
+      console.log(`Schedule image parsed by Gemini (rotation), found ${entries?.length ?? 0} entries`);
+      if (!entries) throw new Error("Gemini could not parse schedule image into a JSON array.");
       return res.json({ entries, count: entries.length });
     } catch (err) {
       return res.status(400).json({ error: `Could not read schedule image: ${err.message}` });
@@ -190,12 +155,10 @@ SCHEDULE TEXT:
 ${extractedText.slice(0, 8000)}`;
 
   try {
-    const result = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: 4000,
-      temperature: 0.1,
-    });
+    const result = await groqChatWithRotation(
+      [{ role: "user", content: prompt }],
+      { max_tokens: 4000, temperature: 0.1 }
+    );
 
     const raw = result.choices[0]?.message?.content?.trim() || "";
     const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();

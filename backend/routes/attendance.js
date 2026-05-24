@@ -36,15 +36,7 @@ const { authenticateToken } = require("../middleware/auth");
 const { syncUserCourses, getClassIdsForUser, verifyUserInClass } = require("../services/userCourseSync");
 const { checkAbsences } = require("../services/absenceChecker");
 const { sendSystemEmail } = require("../services/gmail");
-const Groq = require("groq-sdk");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-
-const groq  = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_KEY || "");
-const GEMINI_MODELS = [
-  "gemini-2.5-flash-preview-04-17","gemini-2.5-flash","gemini-2.0-flash",
-  "gemini-2.0-flash-lite","gemini-1.5-flash-001",
-];
+const { groqChatWithRotation, geminiGenerateWithRotation } = require("../services/aiRotation");
 
 // ── Full Supabase select with related user rows ───────────────────
 const FULL_SELECT = `
@@ -434,39 +426,29 @@ router.post("/extract", authenticateToken, async (req, res) => {
       'Format: ["Full Name One", "Full Name Two", ...]',
     ].join("\n");
 
-    let lastError;
-    for (const modelName of GEMINI_MODELS) {
-      try {
-        const model = genAI.getGenerativeModel({ model: modelName }, { apiVersion: "v1beta" });
-        const result = await model.generateContent([
-          { inlineData: { mimeType: fileType, data: fileData } }, prompt,
-        ]);
-        const raw = result.response.text()?.trim() || "";
-        const cleaned = raw.replace(/^```json\s*/i,"").replace(/^```\s*/i,"").replace(/\s*```$/i,"").trim();
-        let names;
-        try { names = JSON.parse(cleaned); if (!Array.isArray(names)) throw new Error(); }
-        catch { const a = cleaned.match(/\[[\s\S]*\]/); names = a ? JSON.parse(a[0]) : []; }
-        const entries = names.map(n => ({ name: typeof n==="string"?n:n.name||String(n), status:"present" }));
-        return res.json({ names: entries, count: entries.length });
-      } catch (err) {
-        if (err.message?.includes("404")||err.message?.includes("not found")) { lastError=err; continue; }
-        lastError=err; break;
-      }
+    try {
+      const raw = await geminiGenerateWithRotation([
+        { inlineData: { mimeType: fileType, data: fileData } },
+        prompt,
+      ]);
+      const cleaned = raw.trim().replace(/^```json\s*/i,"").replace(/^```\s*/i,"").replace(/\s*```$/i,"").trim();
+      let names;
+      try { names = JSON.parse(cleaned); if (!Array.isArray(names)) throw new Error(); }
+      catch { const a = cleaned.match(/\[[\s\S]*\]/); names = a ? JSON.parse(a[0]) : []; }
+      const entries = names.map(n => ({ name: typeof n==="string"?n:n.name||String(n), status:"present" }));
+      return res.json({ names: entries, count: entries.length });
+    } catch (err) {
+      return res.status(500).json({ error: `Image extraction failed: ${err?.message}` });
     }
-    return res.status(500).json({ error: `Image extraction failed: ${lastError?.message}` });
   }
 
   const extractText = text?.trim();
   if (!extractText) return res.status(400).json({ error: "text or fileData (image) is required" });
 
   try {
-    const result = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content:
-        `Extract student names from this attendance sheet text.\nReturn ONLY a valid JSON array of name strings. No explanation, no markdown.\nTEXT:\n${extractText.slice(0,4000)}\nReturn format: ["Name One", "Name Two", ...]`
-      }],
-      max_tokens: 1000, temperature: 0.1,
-    });
+    const result = await groqChatWithRotation([{ role: "user", content:
+      `Extract student names from this attendance sheet text.\nReturn ONLY a valid JSON array of name strings. No explanation, no markdown.\nTEXT:\n${extractText.slice(0,4000)}\nReturn format: ["Name One", "Name Two", ...]`
+    }], { max_tokens: 1000, temperature: 0.1 });
     const raw = result.choices[0]?.message?.content?.trim() || "";
     const cleaned = raw.replace(/^```json\s*/i,"").replace(/^```\s*/i,"").replace(/\s*```$/i,"").trim();
     let names;

@@ -1,6 +1,11 @@
 const express = require("express");
-const Groq = require("groq-sdk");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const {
+  groqChatWithRotation,
+  geminiGenerateWithRotation,
+  GEMINI_MODELS,
+  GROQ_KEYS,
+  GEMINI_KEYS,
+} = require("../services/aiRotation");
 const { authenticateToken } = require("../middleware/auth");
 const {
   getAllDeadlines, getAllAnnouncements, getCourses, getTaughtCourses,
@@ -14,112 +19,6 @@ const { generateQuestionsFromText, formatQuestionsPreview } = require("../servic
 const supabase = require("../db/supabase");
 
 const router = express.Router();
-
-// ══════════════════════════════════════════════════════════════════
-// API KEY ROTATION
-// ══════════════════════════════════════════════════════════════════
-// Add keys in Render environment variables:
-//   GROQ_API_KEY_1, GROQ_API_KEY_2, GROQ_API_KEY_3  (from separate accounts)
-//   GEMINI_API_KEY_1, GEMINI_API_KEY_2               (from separate Google accounts)
-//
-// Falls back gracefully: Groq key 1 → 2 → 3 → Gemini key 1 → 2
-// A key is skipped when it returns 429 (rate limit) or 401 (invalid).
-// ──────────────────────────────────────────────────────────────────
-
-// Collect all configured Groq keys (supports legacy GROQ_API_KEY too)
-const GROQ_KEYS = [
-  process.env.GROQ_API_KEY_1 || process.env.GROQ_API_KEY,
-  process.env.GROQ_API_KEY_2,
-  process.env.GROQ_API_KEY_3,
-].filter(Boolean);
-
-// Collect all configured Gemini keys (supports legacy GEMINI_API_KEY too)
-const GEMINI_KEYS = [
-  process.env.GEMINI_API_KEY_1 || process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_KEY,
-  process.env.GEMINI_API_KEY_2,
-  process.env.GEMINI_API_KEY_3,
-].filter(Boolean);
-
-// Determine if an error is a rate-limit / quota / auth issue worth rotating on
-const isRotatableError = (err) => {
-  const msg = err?.message || "";
-  const status = err?.status || err?.statusCode || err?.error?.code || 0;
-  return (
-    status === 429 || status === 401 || status === 403 ||
-    msg.includes("429") || msg.includes("rate limit") ||
-    msg.includes("quota") || msg.includes("exceeded") ||
-    msg.includes("Resource has been exhausted") ||
-    msg.includes("API key not valid") ||
-    msg.includes("invalid api key")
-  );
-};
-
-// ── Groq: try each key in sequence, rotate on rate-limit errors ──
-const groqChatWithRotation = async (messages, options = {}) => {
-  let lastErr;
-  for (let i = 0; i < GROQ_KEYS.length; i++) {
-    try {
-      const client = new Groq({ apiKey: GROQ_KEYS[i] });
-      const result = await client.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
-        max_tokens: 8000,
-        temperature: 0.7,
-        ...options,
-        messages,
-      });
-      if (i > 0) console.log(`[PulsBot] Groq key ${i + 1} succeeded`);
-      return result;
-    } catch (err) {
-      lastErr = err;
-      if (isRotatableError(err)) {
-        console.warn(`[PulsBot] Groq key ${i + 1} limit hit, rotating…`);
-        continue;
-      }
-      throw err; // non-rotatable error — surface immediately
-    }
-  }
-  throw lastErr; // all Groq keys exhausted
-};
-
-// ── Gemini: try each key + each model, rotate on rate-limit errors ──
-const geminiGenerateWithRotation = async (parts) => {
-  let lastErr;
-  for (let ki = 0; ki < GEMINI_KEYS.length; ki++) {
-    const genAI = new GoogleGenerativeAI(GEMINI_KEYS[ki]);
-    for (const modelName of GEMINI_MODELS) {
-      try {
-        const model = genAI.getGenerativeModel(
-          { model: modelName },
-          { apiVersion: "v1beta" }
-        );
-        const result = await model.generateContent(parts);
-        if (ki > 0) console.log(`[PulsBot] Gemini key ${ki + 1} / model ${modelName} succeeded`);
-        else console.log(`[PulsBot] Gemini model ${modelName} succeeded`);
-        return result.response.text() || "Sorry, I couldn't analyze that file.";
-      } catch (err) {
-        lastErr = err;
-        if (err.message?.includes("404") || err.message?.includes("not found")) {
-          continue; // try next model, same key
-        }
-        if (isRotatableError(err)) {
-          console.warn(`[PulsBot] Gemini key ${ki + 1} / model ${modelName} limit hit, rotating…`);
-          break; // move to next key
-        }
-        throw err;
-      }
-    }
-  }
-  throw lastErr || new Error("All Gemini keys and models exhausted");
-};
-
-// ── Gemini model fallback list (tries each until one works) ───────
-const GEMINI_MODELS = [
-  "gemini-2.5-flash-preview-04-17",
-  "gemini-2.5-flash",
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-lite",
-  "gemini-1.5-flash-001",
-];
 
 // ── Vision helper: use Gemini when message has an image/file attached ──
 const askGeminiWithVision = async (systemPrompt, history, userMessage, fileData, fileType, fileName) => {
