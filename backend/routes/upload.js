@@ -110,6 +110,32 @@ router.get("/file-data/:fileId", authenticateToken, (req, res) => {
 // Export cache accessor for chatbot.js
 module.exports.getFileCache = getFileCache;
 
+// ── POST /api/upload/cache ───────────────────────────────────────
+// Stores file in memory only — no Drive upload. Used by schedule
+// image reader and chatbot attachments that don't need a Drive link.
+// Returns a { cacheId } that the caller can pass as driveFileId to
+// /schedule/extract or /chatbot/message.
+router.post("/cache", authenticateToken, async (req, res) => {
+  try {
+    const { fileName, fileType, fileData } = req.body;
+    if (!fileName || !fileType || !fileData)
+      return res.status(400).json({ error: "fileName, fileType, and fileData are required." });
+
+    const buffer = Buffer.from(fileData, "base64");
+    if (buffer.length > 10 * 1024 * 1024)
+      return res.status(400).json({ error: "File exceeds 10 MB limit." });
+
+    // Use a unique id that won't collide with real Drive file IDs
+    const cacheId = `cache_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    cacheFile(cacheId, { fileData, fileType, fileName });
+
+    res.json({ cacheId, fileName, fileType, fileSize: buffer.length, quizReady: true });
+  } catch (err) {
+    console.error("Cache upload error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── DELETE /api/upload/drive/:fileId ─────────────────────────────
 router.delete("/drive/:fileId", authenticateToken, async (req, res) => {
   try {
