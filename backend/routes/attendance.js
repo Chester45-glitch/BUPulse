@@ -12,16 +12,18 @@
  *   Then:  SELECT * FROM class_attendance WHERE class_id IN (...)
  *
  * PERMISSION MATRIX (enforced server-side, no exceptions)
- *   ┌─────────────────────┬─────────────┬─────────────┬──────────┐
- *   │ Action              │ Student(U)  │ Student(V)  │Professor │
- *   ├─────────────────────┼─────────────┼─────────────┼──────────┤
- *   │ Create              │     ✅      │     ❌      │    ✅    │
- *   │ Edit own record     │     ✅      │     ❌      │    ✅    │
- *   │ Delete own record   │     ✅      │     ❌      │    ✅    │
- *   │ Verify              │     ❌      │     ❌      │    ✅    │
- *   │ Delete any/verified │     ❌      │     ❌      │    ✅    │
- *   └─────────────────────┴─────────────┴─────────────┴──────────┘
+ *   ┌──────────────────────────┬─────────────┬─────────────┬──────────┐
+ *   │ Action                   │ Student(U)  │ Student(V)  │Professor │
+ *   ├──────────────────────────┼─────────────┼─────────────┼──────────┤
+ *   │ Create                   │     ✅      │     ❌      │    ✅    │
+ *   │ Edit any class record    │     ✅      │     ❌      │    ✅    │
+ *   │ Delete own record        │     ✅      │     ❌      │    ✅    │
+ *   │ Verify                   │     ❌      │     ❌      │    ✅    │
+ *   │ Delete any/verified      │     ❌      │     ❌      │    ✅    │
+ *   └──────────────────────────┴─────────────┴─────────────┴──────────┘
  *   U = unverified, V = verified
+ *   Any enrolled student may edit an unverified attendance record so
+ *   they can add themselves if their name was omitted by the poster.
  *
  * REALTIME
  *   SSE endpoint GET /api/attendance/events?token=JWT
@@ -312,19 +314,21 @@ router.patch("/class/:id", authenticateToken, async (req, res) => {
 
     const userRow    = await getUserRole(req.user.id);
     const isProfessor = userRow?.role === "professor";
-    const isOwnRecord = existing.posted_by === req.user.id;
     const isVerified  = existing.is_verified === true;
 
     // ── Server-side permission check ────────────────────────────
     if (!isProfessor) {
       if (isVerified) {
         return res.status(403).json({
-          error: "Verified attendance cannot be modified by students.",
+          error: "This attendance has been verified by the professor and can no longer be edited.",
         });
       }
-      if (!isOwnRecord) {
+      // Any enrolled student may edit an unverified record so they can
+      // add their own name if the poster accidentally left them out.
+      const inClass = await verifyUserInClass(req.user.id, existing.class_id);
+      if (!inClass) {
         return res.status(403).json({
-          error: "Students can only edit their own attendance records.",
+          error: "You are not enrolled in this class.",
         });
       }
     }
@@ -375,7 +379,6 @@ router.delete("/class/:id", authenticateToken, async (req, res) => {
 
     const userRow    = await getUserRole(req.user.id);
     const isProfessor = userRow?.role === "professor";
-    const isOwnRecord = existing.posted_by === req.user.id;
     const isVerified  = existing.is_verified === true;
 
     // ── Server-side permission check ────────────────────────────
