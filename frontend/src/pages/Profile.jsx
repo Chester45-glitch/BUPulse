@@ -221,7 +221,7 @@ export default function Profile() {
       )}
 
       {/* ── Two-column grid ── */}
-      <div style={{
+      <div className="profile-grid" style={{
         display: "grid",
         gridTemplateColumns: "1fr 1fr",
         gap: 16,
@@ -238,7 +238,7 @@ export default function Profile() {
               <div style={{ position: "absolute", inset: 0, opacity: 0.06, backgroundImage: "radial-gradient(circle, #fff 1px, transparent 1px)", backgroundSize: "22px 22px" }} />
             </div>
 
-            <div style={{ padding: "0 24px 24px", position: "relative" }}>
+            <div className="profile-card-inner" style={{ padding: "0 24px 24px", position: "relative" }}>
               {/* Avatar */}
               <div style={{
                 position: "relative",
@@ -292,8 +292,7 @@ export default function Profile() {
           </div>
 
           {/* Account info */}
-          <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid var(--card-border)", padding: "18px 22px", boxShadow: "var(--shadow-sm)" }}>
-            <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 4 }}>Account</h3>
+          <div className="profile-info-card" style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid var(--card-border)", padding: "18px 22px", boxShadow: "var(--shadow-sm)" }}>
             <InfoRow icon={IcoUser}   label="Full Name"      value={user?.name} />
             <InfoRow icon={IcoMail}   label="Email"          value={user?.email} />
             <InfoRow icon={IcoBadge}  label="Role"           value={rc.label} />
@@ -306,7 +305,7 @@ export default function Profile() {
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
           {/* Notification preferences */}
-          <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid var(--card-border)", padding: "18px 22px", boxShadow: "var(--shadow-sm)" }}>
+          <div className="profile-notif-card" style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid var(--card-border)", padding: "18px 22px", boxShadow: "var(--shadow-sm)" }}>
             <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 16 }}>Notifications</h3>
 
             {/* Toggle 1 — email on/off */}
@@ -350,10 +349,10 @@ export default function Profile() {
           </div>
 
           {/* Danger zone */}
-          <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid #fecaca", padding: "18px 22px", boxShadow: "var(--shadow-sm)" }}>
+          <div className="profile-danger-card" style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid #fecaca", padding: "18px 22px", boxShadow: "var(--shadow-sm)" }}>
             <h3 style={{ fontSize: 12, fontWeight: 700, color: "#dc2626", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 16 }}>Danger Zone</h3>
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div className="profile-danger-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>Delete account</div>
                 <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Permanently remove your account and all associated data</div>
@@ -395,6 +394,12 @@ export default function Profile() {
         @keyframes scaleIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
         @media (max-width: 680px) {
           .profile-grid { grid-template-columns: 1fr !important; }
+          .profile-card-inner { padding: 0 16px 20px !important; }
+          .profile-info-card { padding: 14px 16px !important; }
+          .profile-notif-card { padding: 14px 16px !important; }
+          .profile-danger-card { padding: 14px 16px !important; }
+          .profile-danger-row { flex-direction: column !important; align-items: flex-start !important; }
+          .profile-danger-row button { width: 100% !important; justify-content: center !important; }
         }
       `}</style>
     </div>
