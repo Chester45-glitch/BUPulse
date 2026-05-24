@@ -1,6 +1,4 @@
-const Groq = require("groq-sdk");
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const { groqChatWithRotation } = require("./aiRotation");
 
 const BATCH_SIZE = 25; // Max questions per Groq call (safe within 8000 token limit)
 
@@ -38,12 +36,10 @@ Rules:
 - Cover different sections of the document
 - Output ONLY the JSON array.`;
 
-  const result = await groq.chat.completions.create({
-    model:       "llama-3.3-70b-versatile",
-    messages:    [{ role: "user", content: prompt }],
-    max_tokens:  8000,
-    temperature: 0.6,
-  });
+  const result = await groqChatWithRotation(
+    [{ role: "user", content: prompt }],
+    { max_tokens: 8000, temperature: 0.6 }
+  );
 
   const raw = result.choices[0]?.message?.content?.trim() || "";
   const cleaned = raw
