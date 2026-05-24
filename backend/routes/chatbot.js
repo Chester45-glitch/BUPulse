@@ -20,6 +20,104 @@ const supabase = require("../db/supabase");
 
 const router = express.Router();
 
+// ══════════════════════════════════════════════════════════════════
+// LAZY CONTEXT — only fetch what the message actually needs.
+// A simple "hello" or general question skips ALL Google/Supabase
+// data calls and goes straight to the AI.
+// ══════════════════════════════════════════════════════════════════
+
+// Per-section cache (5-minute TTL each section, per user)
+const CONTEXT_CACHE_TTL_MS = 5 * 60 * 1000;
+const contextCache = new Map(); // userId → { sections: {}, ts: {} }
+
+const getCacheEntry = (userId) => {
+  if (!contextCache.has(userId)) contextCache.set(userId, { sections: {}, ts: {} });
+  return contextCache.get(userId);
+};
+
+const invalidateContext = (userId) => contextCache.delete(userId);
+
+// ── Intent detector — what data does this message actually need? ──
+const detectContextNeeds = (message, role) => {
+  const m = (message || "").toLowerCase();
+
+  const needs = {
+    schedule:    false,
+    deadlines:   false,
+    announcements: false,
+    courses:     false,
+    attendance:  false,
+    submissions: false, // professor only
+    students:    false, // professor only
+    children:    false, // parent only
+  };
+
+  // Schedule keywords
+  if (/schedule|class(es)?|today|tomorrow|this week|free|when (do|does|is)|time|what day|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday/i.test(m))
+    needs.schedule = true;
+
+  // Deadlines / assignments keywords
+  if (/due|deadline|assignment|homework|task|submit|pending|overdue|activity|quiz|exam|test|output/i.test(m))
+    needs.deadlines = true;
+
+  // Announcements keywords
+  if (/announc|news|update|post|notice|bulletin/i.test(m))
+    needs.announcements = true;
+
+  // Courses / classes list
+  if (/course|class(es)?|enrolled|subject|section/i.test(m))
+    needs.courses = true;
+
+  // Attendance keywords
+  if (/attend|absent|present|late|miss(ed)?|record/i.test(m))
+    needs.attendance = true;
+
+  // Professor-specific
+  if (role === "professor") {
+    if (/submit|who (has|hasn.t|have|haven.t)|submission|turn(ed)? in/i.test(m))
+      needs.submissions = true;
+    if (/student|roster|who (are|is)|class list|member/i.test(m))
+      needs.students = true;
+    // If asking about any class data, enable courses too
+    if (needs.submissions || needs.students || needs.attendance)
+      needs.courses = true;
+  }
+
+  // Parent-specific
+  if (role === "parent") {
+    if (/child|son|daughter|kid|student|my |their /i.test(m))
+      needs.children = true;
+    // parents asking about deadlines/schedule implicitly need child data
+    if (needs.deadlines || needs.schedule || needs.attendance)
+      needs.children = true;
+  }
+
+  // If nothing matched, this is a general/casual message — fetch nothing
+  const needsAnything = Object.values(needs).some(Boolean);
+  return needsAnything ? needs : null; // null = no context needed
+};
+
+// ── Lazy context fetcher — only fetches needed sections ──────────
+const getLazyContext = async (user, message) => {
+  const needs = detectContextNeeds(message, user.role);
+  if (!needs) return ""; // casual message — skip all fetches
+
+  const entry = getCacheEntry(user.id);
+  const now   = Date.now();
+  const fresh = (key) => entry.sections[key] && (now - (entry.ts[key] || 0)) < CONTEXT_CACHE_TTL_MS;
+  const save  = (key, val) => { entry.sections[key] = val; entry.ts[key] = now; };
+
+  // Prevent unbounded cache growth
+  if (contextCache.size > 300) {
+    for (const [k, v] of contextCache) {
+      const oldest = Math.min(...Object.values(v.ts || { _: 0 }));
+      if (now - oldest > CONTEXT_CACHE_TTL_MS) contextCache.delete(k);
+    }
+  }
+
+  return getClassroomContext(user, needs, { fresh, save });
+};
+
 // ── Vision helper: use Gemini when message has an image/file attached ──
 const askGeminiWithVision = async (systemPrompt, history, userMessage, fileData, fileType, fileName) => {
   // Build a plain-text chat history for context (Gemini doesn't have system role)
@@ -169,7 +267,13 @@ ${classroomContext}`;
 };
 
 // ── Classroom context ─────────────────────────────────────────────
-const getClassroomContext = async (user) => {
+const getClassroomContext = async (user, needs = null, cache = null) => {
+  // needs = object of booleans from detectContextNeeds (null = fetch everything)
+  // cache = { fresh(key), save(key, val) } for per-section caching
+  const need = (key) => !needs || needs[key];
+  const isFresh = (key) => cache?.fresh(key);
+  const saveCache = (key, val) => cache?.save(key, val);
+  const fromCache = (key) => cache?.fresh(key) ? cache?.fresh(key) && isFresh(key) : false;
   if (!user.access_token && user.role !== "parent") return "";
   const now = new Date();
   const pad = n => String(n).padStart(2, "0");
@@ -180,29 +284,34 @@ const getClassroomContext = async (user) => {
     // PROFESSOR
     // ════════════════════════════════════════════════════════
     if (user.role === "professor") {
-      const courses = await getTaughtCourses(user.access_token, user.refresh_token).catch(() => []);
+      // Only fetch courses list if needed
+      const courses = need("courses") || need("students") || need("submissions") || need("attendance")
+        ? await getTaughtCourses(user.access_token, user.refresh_token).catch(() => [])
+        : [];
 
-      // Process courses sequentially (not all-parallel) to avoid Google API rate limits.
-      // Cap at 5 courses max for context size.
+      // Per-course detail only if any course-level data is needed
+      const needsCourseDetail = need("students") || need("submissions") || need("attendance");
       const courseDetails = [];
-      for (const c of courses.slice(0, 5)) {
+      for (const c of (needsCourseDetail ? courses.slice(0, 5) : [])) {
         try {
-          // Fetch students and attendance in parallel; submissions separately (heavier call)
-          const [students, attRows] = await Promise.all([
-            getCourseStudents(c.id, user.access_token, user.refresh_token).catch(() => []),
-            supabase.from("class_attendance")
-              .select("record_date, session_label, names, is_verified")
-              .eq("class_id", c.id)
-              .order("record_date", { ascending: false })
-              .limit(5)
-              .then(r => r.data || [])
-              .catch(() => []),
+          // Only request what the message needs
+          const [students, attRows, submissions] = await Promise.all([
+            need("students")
+              ? getCourseStudents(c.id, user.access_token, user.refresh_token).catch(() => [])
+              : Promise.resolve([]),
+            need("attendance")
+              ? supabase.from("class_attendance")
+                  .select("record_date, session_label, names, is_verified")
+                  .eq("class_id", c.id)
+                  .order("record_date", { ascending: false })
+                  .limit(5)
+                  .then(r => r.data || [])
+                  .catch(() => [])
+              : Promise.resolve([]),
+            need("submissions")
+              ? getProfessorSubmissionSummary(c.id, user.access_token, user.refresh_token).catch(() => [])
+              : Promise.resolve([]),
           ]);
-
-          // Submissions separately — can fail gracefully
-          const submissions = await getProfessorSubmissionSummary(
-            c.id, user.access_token, user.refresh_token
-          ).catch(() => []);
 
           const studentNames = students
             .map(s => s.profile?.name?.fullName || null)
@@ -243,11 +352,11 @@ const getClassroomContext = async (user) => {
         }
       }
 
-      // Professor's own schedule
-      const { data: schedule } = await supabase
-        .from("schedules").select("*")
-        .eq("user_id", user.id)
-        .order("day_of_week").order("start_time");
+      // Professor's own schedule — only if asked
+      const { data: schedule } = need("schedule")
+        ? await supabase.from("schedules").select("*")
+            .eq("user_id", user.id).order("day_of_week").order("start_time")
+        : { data: [] };
       const dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
       const schedByDay = {};
       (schedule||[]).forEach(s => {
@@ -291,6 +400,7 @@ const getClassroomContext = async (user) => {
     // PARENT
     // ════════════════════════════════════════════════════════
     if (user.role === "parent") {
+      if (!need("children")) return ""; // casual message — skip child data lookup
       const { data: links } = await supabase
         .from("parent_links")
         .select("student_id, student:student_id(id, name, email)")
@@ -315,14 +425,22 @@ const getClassroomContext = async (user) => {
           continue;
         }
 
-        // Fetch deadlines, courses, schedule, and attendance in parallel
+        // Only fetch what the message needs for this child
         const [deadlines, courses, scheduleRes, courseIds] = await Promise.all([
-          getAllDeadlines(studentRow.access_token, studentRow.refresh_token).catch(() => []),
-          getCourses(studentRow.access_token, studentRow.refresh_token).catch(() => []),
-          supabase.from("schedules").select("*").eq("user_id", student.id)
-            .order("day_of_week").order("start_time"),
-          supabase.from("user_courses").select("course_id").eq("user_id", student.id)
-            .then(r => (r.data||[]).map(c => c.course_id)).catch(() => []),
+          need("deadlines")
+            ? getAllDeadlines(studentRow.access_token, studentRow.refresh_token).catch(() => [])
+            : Promise.resolve([]),
+          need("courses") || need("deadlines")
+            ? getCourses(studentRow.access_token, studentRow.refresh_token).catch(() => [])
+            : Promise.resolve([]),
+          need("schedule")
+            ? supabase.from("schedules").select("*").eq("user_id", student.id)
+                .order("day_of_week").order("start_time")
+            : Promise.resolve({ data: [] }),
+          need("attendance")
+            ? supabase.from("user_courses").select("course_id").eq("user_id", student.id)
+                .then(r => (r.data||[]).map(c => c.course_id)).catch(() => [])
+            : Promise.resolve([]),
         ]);
 
         const overdue  = deadlines.filter(d => new Date(d.dueDate) < now);
@@ -395,12 +513,21 @@ const getClassroomContext = async (user) => {
     // ════════════════════════════════════════════════════════
     // STUDENT
     // ════════════════════════════════════════════════════════
+    // Only fetch what the message needs — skip the rest
     const [deadlines, announcements, courses, scheduleRes] = await Promise.all([
-      getAllDeadlines(user.access_token, user.refresh_token).catch(() => []),
-      getAllAnnouncements(user.access_token, user.refresh_token).catch(() => []),
-      getCourses(user.access_token, user.refresh_token).catch(() => []),
-      supabase.from("schedules").select("*").eq("user_id", user.id)
-        .order("day_of_week").order("start_time"),
+      need("deadlines")
+        ? getAllDeadlines(user.access_token, user.refresh_token).catch(() => [])
+        : Promise.resolve([]),
+      need("announcements")
+        ? getAllAnnouncements(user.access_token, user.refresh_token).catch(() => [])
+        : Promise.resolve([]),
+      need("courses") || need("deadlines")
+        ? getCourses(user.access_token, user.refresh_token).catch(() => [])
+        : Promise.resolve([]),
+      need("schedule")
+        ? supabase.from("schedules").select("*").eq("user_id", user.id)
+            .order("day_of_week").order("start_time")
+        : Promise.resolve({ data: [] }),
     ]);
 
     const overdue  = deadlines.filter(d => new Date(d.dueDate) < now);
@@ -841,12 +968,14 @@ router.post("/message", authenticateToken, async (req, res) => {
     //   • any file is attached and user has NOT triggered quiz/assignment flow
     // Otherwise use Groq (llama) for everything else — faster, better at actions.
 
-    const { data: history } = await supabase
-      .from("chat_messages").select("role, content")
-      .eq("user_id", req.user.id).order("created_at", { ascending: true }).limit(20);
-
-    const classroomContext = await getClassroomContext(user);
-    const systemPrompt     = buildSystemPrompt(user.role, classroomContext);
+    // Fetch history and lazy context in parallel
+    // getLazyContext returns "" for casual messages — no Google API calls at all
+    const [{ data: history }, classroomContext] = await Promise.all([
+      supabase.from("chat_messages").select("role, content")
+        .eq("user_id", req.user.id).order("created_at", { ascending: true }).limit(16),
+      getLazyContext(user, message),
+    ]);
+    const systemPrompt = buildSystemPrompt(user.role, classroomContext);
 
     // Determine if this message has a vision/file component that needs Gemini
     const isImageAttached = fileType?.startsWith("image/");
@@ -961,7 +1090,16 @@ router.get("/history", authenticateToken, async (req, res) => {
 // ── DELETE /api/chatbot/history ───────────────────────────────────
 router.delete("/history", authenticateToken, async (req, res) => {
   await supabase.from("chat_messages").delete().eq("user_id", req.user.id);
+  invalidateContext(req.user.id); // also bust context cache
   res.json({ message: "History cleared" });
+});
+
+// ── POST /api/chatbot/refresh-context ────────────────────────────
+// Call this from the frontend after the user posts an announcement,
+// creates an assignment, etc. — so the next message gets fresh context.
+router.post("/refresh-context", authenticateToken, async (req, res) => {
+  invalidateContext(req.user.id);
+  res.json({ ok: true });
 });
 
 module.exports = router;
