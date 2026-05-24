@@ -271,71 +271,6 @@ const announcementTemplate = (name, announcements) => {
   );
 };
 
-// ══════════════════════════════════════════════════════════════════
-// 5. BULMS PENDING ACTIVITIES REMINDER
-// ══════════════════════════════════════════════════════════════════
-const bulmsDeadlineTemplate = (name, activities) => {
-  const rows = activities.map((a) => {
-    const dueDate    = a.due_date ? new Date(a.due_date) : null;
-    const now        = new Date();
-    const daysLeft   = dueDate ? Math.ceil((dueDate - now) / 86400000) : null;
-    const dueLabel   = daysLeft === null  ? "No due date"
-                     : daysLeft === 0     ? "Due TODAY"
-                     : daysLeft === 1     ? "Due TOMORROW"
-                     : `${daysLeft}d left`;
-    const dueColor   = daysLeft === null  ? "#6b7280"
-                     : daysLeft === 0     ? "#dc2626"
-                     : daysLeft <= 1      ? "#d97706"
-                     : "#16a34a";
-    const typeLabel  = (a.activity_type || "activity").replace(/_/g, " ").toUpperCase();
-    const typeColor  = a.activity_type === "quiz"  ? "#6b21a8"
-                     : a.activity_type === "forum" ? "#0369a1"
-                     : "#d97706"; // assign default
-
-    return `
-    <tr>
-      <td style="padding:12px 14px;border-bottom:1px solid #f0f4f0;">
-        <p style="margin:0;font-size:14px;font-weight:600;color:#111827;">${a.activity_name}</p>
-        <p style="margin:3px 0 0;font-size:12px;color:#9ca3af;">
-          ${badge(typeLabel, typeColor, typeColor + "18")}
-          &nbsp;${a.course_name || ""}
-        </p>
-      </td>
-      <td style="padding:12px 14px;border-bottom:1px solid #f0f4f0;text-align:right;white-space:nowrap;">
-        ${badge(dueLabel, dueColor, dueColor + "18")}
-        ${dueDate ? `<p style="margin:4px 0 0;font-size:11px;color:#9ca3af;">${dueDate.toLocaleDateString("en-PH", { month:"short", day:"numeric", year:"numeric", timeZone:"Asia/Manila" })}</p>` : ""}
-      </td>
-    </tr>`;
-  }).join("");
-
-  const body = `
-    <p style="margin:0 0 6px;font-size:18px;font-weight:700;color:#111827;">Hey ${name}, don't forget! 📚</p>
-    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;">
-      You have <strong style="color:#111827;">${activities.length} pending BULMS activit${activities.length > 1 ? "ies" : "y"}</strong> waiting for you. Stay on top of your work!
-    </p>
-
-    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8f0e8;border-radius:10px;overflow:hidden;border-collapse:separate;border-spacing:0;">
-      <thead>
-        <tr style="background:#f0f7f0;">
-          <th style="padding:10px 14px;text-align:left;font-size:12px;color:#4a7a4a;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e8f0e8;">Activity</th>
-          <th style="padding:10px 14px;text-align:right;font-size:12px;color:#4a7a4a;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e8f0e8;">Due</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-
-    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px 18px;margin-top:20px;">
-      <p style="margin:0;font-size:13.5px;color:#166534;">💡 <strong>Tip:</strong> Open BULMS to check the full instructions for each activity before the deadline — kaya mo yan! 💪</p>
-    </div>
-    ${ctaBtn("View BULMS Activities →", `${process.env.FRONTEND_URL}/bulms-sync`, "#1a3320")}`;
-
-  return layout(
-    "linear-gradient(135deg,#1a3320 0%,#16a34a 100%)",
-    `<p style="margin:0;color:rgba(255,255,255,0.9);font-size:13px;font-weight:600;">📚 BULMS Reminder</p>`,
-    body
-  );
-};
-
 // ── Notification log helpers ──────────────────────────────────────
 const logNotification = async (userId, type, metadata) => {
   await supabase.from("notification_logs").insert({
@@ -408,7 +343,6 @@ module.exports = {
   noCourseworkTemplate,
   overdueTemplate,
   announcementTemplate,
-  bulmsDeadlineTemplate,
   logNotification,
   wasRecentlySent,
 };
