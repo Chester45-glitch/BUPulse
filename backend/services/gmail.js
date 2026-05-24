@@ -126,7 +126,7 @@ const deadlineTemplate = (name, assignments) => {
   }).join("");
 
   const body = `
-    <p style="margin:0 0 6px;font-size:18px;font-weight:700;color:#111827;">Hey ${name}, heads up! 📋</p>
+    <p style="margin:0 0 6px;font-size:18px;font-weight:700;color:#111827;">Hey ${name}, heads up!</p>
     <p style="margin:0 0 24px;font-size:15px;color:#6b7280;">You have <strong style="color:#111827;">${assignments.length} upcoming deadline${assignments.length > 1 ? "s" : ""}</strong> coming up. Don't let them sneak up on you!</p>
 
     <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8f0e8;border-radius:10px;overflow:hidden;border-collapse:separate;border-spacing:0;">
@@ -145,7 +145,7 @@ const deadlineTemplate = (name, assignments) => {
 
   return layout(
     "linear-gradient(135deg,#1a3320 0%,#2d5a1b 100%)",
-    `<p style="margin:0;color:rgba(255,255,255,0.9);font-size:13px;font-weight:600;">📋 Deadlines</p>`,
+    `<p style="margin:0;color:rgba(255,255,255,0.9);font-size:13px;font-weight:600;"> Deadlines</p>`,
     body
   );
 };
@@ -166,7 +166,7 @@ const overdueTemplate = (name, assignments) => {
     </tr>`).join("");
 
   const body = `
-    <p style="margin:0 0 6px;font-size:18px;font-weight:700;color:#111827;">Action needed, ${name}! ⚠️</p>
+    <p style="margin:0 0 6px;font-size:18px;font-weight:700;color:#111827;">Action needed, ${name}!</p>
     <p style="margin:0 0 24px;font-size:15px;color:#6b7280;">You have <strong style="color:#dc2626;">${assignments.length} overdue assignment${assignments.length > 1 ? "s" : ""}</strong>. Submit them as soon as possible to avoid further penalties.</p>
 
     <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #fee2e2;border-radius:10px;overflow:hidden;border-collapse:separate;border-spacing:0;background:#fff5f5;">
@@ -174,13 +174,13 @@ const overdueTemplate = (name, assignments) => {
     </table>
 
     <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:14px 18px;margin-top:20px;">
-      <p style="margin:0;font-size:13.5px;color:#9a3412;">💡 <strong>Tip:</strong> Talk to your professor if you need an extension — it's better to communicate early than to let work pile up.</p>
+      <p style="margin:0;font-size:13.5px;color:#9a3412;"> <strong>Tip:</strong> Talk to your professor if you need an extension — it's better to communicate early than to let work pile up.</p>
     </div>
     ${ctaBtn("View Overdue Work →", `${process.env.FRONTEND_URL}/pending-activities`, "#dc2626")}`;
 
   return layout(
     "linear-gradient(135deg,#b91c1c 0%,#dc2626 100%)",
-    `<p style="margin:0;color:rgba(255,255,255,0.9);font-size:13px;font-weight:600;">🚨 Overdue Alert</p>`,
+    `<p style="margin:0;color:rgba(255,255,255,0.9);font-size:13px;font-weight:600;"> Overdue Alert</p>`,
     body
   );
 };
@@ -191,7 +191,7 @@ const overdueTemplate = (name, assignments) => {
 const noCourseworkTemplate = (name) => {
   const body = `
     <div style="text-align:center;padding:16px 0;">
-      <div style="font-size:52px;margin-bottom:16px;">🎉</div>
+      <div style="font-size:52px;margin-bottom:16px;"></div>
       <p style="margin:0 0 8px;font-size:20px;font-weight:700;color:#111827;">You're all caught up, ${name}!</p>
       <p style="margin:0 0 28px;font-size:15px;color:#6b7280;line-height:1.6;">No upcoming coursework in the next 7 days. This is a great time to review past lessons, get ahead, or simply take a well-deserved break.</p>
       <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:18px 24px;text-align:left;margin-bottom:24px;">
@@ -253,7 +253,7 @@ const announcementTemplate = (name, announcements) => {
 
   const count = announcements.length;
   const body = `
-    <p style="margin:0 0 6px;font-size:18px;font-weight:700;color:#111827;">New post${count > 1 ? "s" : ""} in your classes, ${name}! 📢</p>
+    <p style="margin:0 0 6px;font-size:18px;font-weight:700;color:#111827;">New post${count > 1 ? "s" : ""} in your classes, ${name}! </p>
     <p style="margin:0 0 24px;font-size:15px;color:#6b7280;">
       ${count === 1
         ? "Your professor just posted something new."
@@ -266,7 +266,7 @@ const announcementTemplate = (name, announcements) => {
 
   return layout(
     "linear-gradient(135deg,#1e3a5f 0%,#1d4ed8 100%)",
-    `<p style="margin:0;color:rgba(255,255,255,0.9);font-size:13px;font-weight:600;">📢 New Post${count > 1 ? "s" : ""}</p>`,
+    `<p style="margin:0;color:rgba(255,255,255,0.9);font-size:13px;font-weight:600;">New Post${count > 1 ? "s" : ""}</p>`,
     body
   );
 };
