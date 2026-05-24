@@ -212,7 +212,7 @@ export default function Profile() {
   };
 
   return (
-    <div style={{ animation: "fadeIn 0.35s ease", maxWidth: 580 }}>
+    <div style={{ animation: "fadeIn 0.35s ease", maxWidth: 960 }}>
       {pageError && (
         <div style={{ display: "flex", alignItems: "center", gap: 7, background: "#fee2e2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", color: "#b91c1c", fontSize: 13.5, marginBottom: 16 }}>
           <IcoAlert /> {pageError}
@@ -220,145 +220,165 @@ export default function Profile() {
         </div>
       )}
 
-      {/* ── Cover card ── */}
-      <div style={{ background: "var(--card-bg, #fff)", borderRadius: 18, border: "1px solid var(--card-border, #e9ecef)", overflow: "hidden", boxShadow: "var(--shadow-md)", marginBottom: 16 }}>
-        {/* Banner */}
-        <div style={{ height: 96, background: "linear-gradient(135deg, #0f1f0f 0%, #1a3a1a 100%)", position: "relative", overflow: "hidden" }}>
-          <div style={{ position: "absolute", inset: 0, opacity: 0.06, backgroundImage: "radial-gradient(circle, #fff 1px, transparent 1px)", backgroundSize: "22px 22px" }} />
-        </div>
+      {/* ── Two-column grid ── */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 16,
+        alignItems: "start",
+      }}>
 
-        <div style={{ padding: "0 24px 24px", position: "relative" }}>
-          {/* ── Avatar — FIXED: uses relative positioning offset from banner ── */}
-          <div style={{
-            position: "relative",    /* no absolute — avoids z-index stacking bug */
-            marginTop: -44,          /* pull up over the banner */
-            marginBottom: 14,
-            width: 80,
-            zIndex: 1,               /* sit above banner but below dropdown */
-            display: "inline-block",
-          }}>
-            {user?.picture
-              ? (
-                <img
-                  src={user.picture}
-                  alt={user.name}
-                  style={{
-                    width: 80, height: 80, borderRadius: "50%", display: "block",
-                    border: "4px solid var(--card-bg, #fff)",
-                    boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
-                    objectFit: "cover",
-                  }}
-                />
-              )
-              : (
-                <div style={{
-                  width: 80, height: 80, borderRadius: "50%", display: "flex",
-                  alignItems: "center", justifyContent: "center",
-                  background: `linear-gradient(135deg, ${rc.color}cc, ${rc.color})`,
-                  border: "4px solid var(--card-bg, #fff)",
-                  boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
-                  color: "#fff", fontSize: 26, fontWeight: 700,
-                }}>
-                  {user ? initials(user.name) : "?"}
-                </div>
-              )
-            }
-          </div>
+        {/* ── LEFT COLUMN: Profile card + Account info ── */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-          {/* Role badge — top-right of card body */}
-          <div style={{ position: "absolute", top: -44 + 96 + 14, right: 24 }}>
-            <span style={{
-              background: rc.bg, color: rc.color,
-              border: `1px solid ${rc.border}`,
-              fontSize: 11.5, fontWeight: 700, padding: "3px 10px", borderRadius: 99,
-              letterSpacing: "0.3px",
-            }}>{rc.label}</span>
-          </div>
+          {/* Cover card */}
+          <div style={{ background: "var(--card-bg, #fff)", borderRadius: 18, border: "1px solid var(--card-border, #e9ecef)", overflow: "hidden", boxShadow: "var(--shadow-md)" }}>
+            {/* Banner */}
+            <div style={{ height: 96, background: "linear-gradient(135deg, #0f1f0f 0%, #1a3a1a 100%)", position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", inset: 0, opacity: 0.06, backgroundImage: "radial-gradient(circle, #fff 1px, transparent 1px)", backgroundSize: "22px 22px" }} />
+            </div>
 
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>{user?.name}</h2>
-          <p style={{ fontSize: 13.5, color: "var(--text-muted)" }}>{user?.email}</p>
-        </div>
-      </div>
+            <div style={{ padding: "0 24px 24px", position: "relative" }}>
+              {/* Avatar */}
+              <div style={{
+                position: "relative",
+                marginTop: -44,
+                marginBottom: 14,
+                width: 80,
+                zIndex: 1,
+                display: "inline-block",
+              }}>
+                {user?.picture
+                  ? (
+                    <img
+                      src={user.picture}
+                      alt={user.name}
+                      style={{
+                        width: 80, height: 80, borderRadius: "50%", display: "block",
+                        border: "4px solid var(--card-bg, #fff)",
+                        boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
+                        objectFit: "cover",
+                      }}
+                    />
+                  )
+                  : (
+                    <div style={{
+                      width: 80, height: 80, borderRadius: "50%", display: "flex",
+                      alignItems: "center", justifyContent: "center",
+                      background: `linear-gradient(135deg, ${rc.color}cc, ${rc.color})`,
+                      border: "4px solid var(--card-bg, #fff)",
+                      boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
+                      color: "#fff", fontSize: 26, fontWeight: 700,
+                    }}>
+                      {user ? initials(user.name) : "?"}
+                    </div>
+                  )
+                }
+              </div>
 
-      {/* ── Account info ── */}
-      <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid var(--card-border)", padding: "18px 22px", boxShadow: "var(--shadow-sm)", marginBottom: 14 }}>
-        <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 4 }}>Account</h3>
-        <InfoRow icon={IcoUser}   label="Full Name"      value={user?.name} />
-        <InfoRow icon={IcoMail}   label="Email"          value={user?.email} />
-        <InfoRow icon={IcoBadge}  label="Role"           value={rc.label} />
-        <InfoRow icon={IcoShield} label="Sign-in Method" value="Google OAuth 2.0" border={false} />
-      </div>
+              {/* Role badge */}
+              <div style={{ position: "absolute", top: -44 + 96 + 14, right: 24 }}>
+                <span style={{
+                  background: rc.bg, color: rc.color,
+                  border: `1px solid ${rc.border}`,
+                  fontSize: 11.5, fontWeight: 700, padding: "3px 10px", borderRadius: 99,
+                  letterSpacing: "0.3px",
+                }}>{rc.label}</span>
+              </div>
 
-      {/* ── Notification preferences ── */}
-      <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid var(--card-border)", padding: "18px 22px", boxShadow: "var(--shadow-sm)", marginBottom: 14 }}>
-        <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 16 }}>Notifications</h3>
-
-        {/* Toggle 1 — email on/off */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, paddingBottom: 14, borderBottom: "1px solid var(--border-color)", marginBottom: 14 }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 9, background: "var(--bg-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", flexShrink: 0 }}><IcoBell /></div>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>Email notifications</div>
-              <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Deadline reminders and announcement alerts</div>
+              <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>{user?.name}</h2>
+              <p style={{ fontSize: 13.5, color: "var(--text-muted)" }}>{user?.email}</p>
             </div>
           </div>
-          <NotificationToggle enabled={notifEnabled} onChange={handleNotifChange} loading={notifLoading} />
-        </div>
 
-        {/* Toggle 2 — instant vs scheduled */}
-        <div style={{ opacity: notifEnabled ? 1 : 0.4, pointerEvents: notifEnabled ? "auto" : "none", transition: "opacity 0.2s" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 9, background: notifInstant ? "rgba(22,163,74,0.1)" : "var(--bg-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", color: notifInstant ? "var(--green-700)" : "var(--text-muted)", flexShrink: 0, transition: "all 0.2s" }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          {/* Account info */}
+          <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid var(--card-border)", padding: "18px 22px", boxShadow: "var(--shadow-sm)" }}>
+            <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 4 }}>Account</h3>
+            <InfoRow icon={IcoUser}   label="Full Name"      value={user?.name} />
+            <InfoRow icon={IcoMail}   label="Email"          value={user?.email} />
+            <InfoRow icon={IcoBadge}  label="Role"           value={rc.label} />
+            <InfoRow icon={IcoShield} label="Sign-in Method" value="Google OAuth 2.0" border={false} />
+          </div>
+
+        </div>{/* end LEFT COLUMN */}
+
+        {/* ── RIGHT COLUMN: Notifications + Danger zone ── */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+          {/* Notification preferences */}
+          <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid var(--card-border)", padding: "18px 22px", boxShadow: "var(--shadow-sm)" }}>
+            <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 16 }}>Notifications</h3>
+
+            {/* Toggle 1 — email on/off */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, paddingBottom: 14, borderBottom: "1px solid var(--border-color)", marginBottom: 14 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 9, background: "var(--bg-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", flexShrink: 0 }}><IcoBell /></div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>Email notifications</div>
+                  <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Deadline reminders and announcement alerts</div>
+                </div>
               </div>
+              <NotificationToggle enabled={notifEnabled} onChange={handleNotifChange} loading={notifLoading} />
+            </div>
+
+            {/* Toggle 2 — instant vs scheduled */}
+            <div style={{ opacity: notifEnabled ? 1 : 0.4, pointerEvents: notifEnabled ? "auto" : "none", transition: "opacity 0.2s" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 9, background: notifInstant ? "rgba(22,163,74,0.1)" : "var(--bg-tertiary)", display: "flex", alignItems: "center", justifyContent: "center", color: notifInstant ? "var(--green-700)" : "var(--text-muted)", flexShrink: 0, transition: "all 0.2s" }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>
+                      Instant announcements
+                      {notifInstant && <span style={{ marginLeft: 7, fontSize: 10, fontWeight: 700, background: "rgba(22,163,74,0.1)", color: "var(--green-700)", padding: "2px 7px", borderRadius: 99 }}>ON</span>}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
+                      {notifInstant ? "Email sent immediately when a new post appears" : "Announcements checked every 30 minutes (default)"}
+                    </div>
+                  </div>
+                </div>
+                <NotificationToggle enabled={notifInstant} onChange={handleInstantChange} loading={notifLoading} />
+              </div>
+            </div>
+
+            {notifSaved && (
+              <div style={{ marginTop: 12, fontSize: 12, color: "#16a34a", display: "flex", alignItems: "center", gap: 4 }}>
+                <IcoCheck /> Saved
+              </div>
+            )}
+          </div>
+
+          {/* Danger zone */}
+          <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid #fecaca", padding: "18px 22px", boxShadow: "var(--shadow-sm)" }}>
+            <h3 style={{ fontSize: 12, fontWeight: 700, color: "#dc2626", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 16 }}>Danger Zone</h3>
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>
-                  Instant announcements
-                  {notifInstant && <span style={{ marginLeft: 7, fontSize: 10, fontWeight: 700, background: "rgba(22,163,74,0.1)", color: "var(--green-700)", padding: "2px 7px", borderRadius: 99 }}>ON</span>}
-                </div>
-                <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
-                  {notifInstant ? "Email sent immediately when a new post appears" : "Announcements checked every 30 minutes (default)"}
-                </div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>Delete account</div>
+                <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Permanently remove your account and all associated data</div>
               </div>
+              <button
+                onClick={() => setShowDelete(true)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 7,
+                  padding: "9px 16px", borderRadius: 10,
+                  background: "#fee2e2", border: "1px solid #fecaca",
+                  color: "#dc2626", fontSize: 13.5, fontWeight: 600,
+                  cursor: "pointer", transition: "all 0.15s",
+                  flexShrink: 0,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = "#dc2626"; e.currentTarget.style.color = "#fff"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "#fee2e2"; e.currentTarget.style.color = "#dc2626"; }}
+              >
+                <IcoTrash /> Delete Account
+              </button>
             </div>
-            <NotificationToggle enabled={notifInstant} onChange={handleInstantChange} loading={notifLoading} />
           </div>
-        </div>
 
-        {notifSaved && (
-          <div style={{ marginTop: 12, fontSize: 12, color: "#16a34a", display: "flex", alignItems: "center", gap: 4 }}>
-            <IcoCheck /> Saved
-          </div>
-        )}
-      </div>
+        </div>{/* end RIGHT COLUMN */}
 
-      {/* ── Danger zone ── */}
-      <div style={{ background: "var(--card-bg)", borderRadius: 16, border: "1px solid #fecaca", padding: "18px 22px", boxShadow: "var(--shadow-sm)" }}>
-        <h3 style={{ fontSize: 12, fontWeight: 700, color: "#dc2626", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 16 }}>Danger Zone</h3>
-
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>Delete account</div>
-            <div style={{ fontSize: 12.5, color: "var(--text-muted)" }}>Permanently remove your account and all associated data</div>
-          </div>
-          <button
-            onClick={() => setShowDelete(true)}
-            style={{
-              display: "flex", alignItems: "center", gap: 7,
-              padding: "9px 16px", borderRadius: 10,
-              background: "#fee2e2", border: "1px solid #fecaca",
-              color: "#dc2626", fontSize: 13.5, fontWeight: 600,
-              cursor: "pointer", transition: "all 0.15s",
-              flexShrink: 0,
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = "#dc2626"; e.currentTarget.style.color = "#fff"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = "#fee2e2"; e.currentTarget.style.color = "#dc2626"; }}
-          >
-            <IcoTrash /> Delete Account
-          </button>
-        </div>
-      </div>
+      </div>{/* end grid */}
 
       {/* Delete modal */}
       {showDelete && (
@@ -373,6 +393,9 @@ export default function Profile() {
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes spin    { to { transform: rotate(360deg); } }
         @keyframes scaleIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
+        @media (max-width: 680px) {
+          .profile-grid { grid-template-columns: 1fr !important; }
+        }
       `}</style>
     </div>
   );
