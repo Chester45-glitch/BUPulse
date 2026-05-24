@@ -65,8 +65,9 @@ export function ChatInput({ onSend, disabled, compact = false }) {
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
-      const res = await api.post("/upload/drive", { fileName: file.name, fileType: file.type, fileData: base64 });
-      setPendingFile({ name: file.name, type: file.type, url: res.data.driveFileUrl, driveFileId: res.data.driveFileId, quizReady: res.data.quizReady });
+      // Use cache-only upload — no Drive needed unless attaching to an announcement
+      const res = await api.post("/upload/cache", { fileName: file.name, fileType: file.type, fileData: base64 });
+      setPendingFile({ name: file.name, type: file.type, url: null, driveFileId: res.data.cacheId, quizReady: res.data.quizReady });
     } catch { alert("Upload failed. Please try again."); }
     finally { setUploading(false); }
   };
