@@ -67,11 +67,11 @@ const isAbsentInRecord = (studentName, record) => {
 
 // ── Email templates ──────────────────────────────────────────────
 const buildStudentEmail = (studentName, className, count) => ({
-  subject: `⚠️ Attendance Alert: ${count} Consecutive Absences in ${className}`,
+  subject: `Attendance Alert: ${count} Consecutive Absences in ${className}`,
   html: `
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
   <div style="background:#dc2626;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0">
-    <h2 style="margin:0">⚠️ Attendance Alert</h2>
+    <h2 style="margin:0">Attendance Alert</h2>
   </div>
   <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;padding:24px;border-radius:0 0 12px 12px">
     <p>Hi <strong>${studentName}</strong>,</p>
@@ -87,11 +87,11 @@ const buildStudentEmail = (studentName, className, count) => ({
 });
 
 const buildProfessorEmail = (studentName, studentEmail, className, count) => ({
-  subject: `📋 Attendance Alert: ${studentName} — ${count} Consecutive Absences`,
+  subject: `Attendance Alert: ${studentName} — ${count} Consecutive Absences`,
   html: `
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
   <div style="background:#1e40af;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0">
-    <h2 style="margin:0">📋 Student Absence Alert</h2>
+    <h2 style="margin:0">Student Absence Alert</h2>
   </div>
   <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;padding:24px;border-radius:0 0 12px 12px">
     <p>Dear Professor,</p>
@@ -109,11 +109,11 @@ const buildProfessorEmail = (studentName, studentEmail, className, count) => ({
 });
 
 const buildParentEmail = (parentName, studentName, className, count) => ({
-  subject: `👨‍👩‍👧 Attendance Alert: ${studentName} — ${count} Consecutive Absences`,
+  subject: `Attendance Alert: ${studentName} — ${count} Consecutive Absences`,
   html: `
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
   <div style="background:#7c3aed;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0">
-    <h2 style="margin:0">👨‍👩‍👧 Parent Attendance Notice</h2>
+    <h2 style="margin:0">Parent Attendance Notice</h2>
   </div>
   <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;padding:24px;border-radius:0 0 12px 12px">
     <p>Dear ${parentName || "Parent/Guardian"},</p>
