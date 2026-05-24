@@ -134,14 +134,15 @@ const MAGIC_SCRIPT = `(async () => {
       const r = await fetch(course.course_url); const h = await r.text();
       const doc = new DOMParser().parseFromString(h, "text/html");
 
-      doc.querySelectorAll(".activity, li.activity").forEach(el => {
+      // Convert to for...of so we can await submission-status checks
+      for (const el of doc.querySelectorAll(".activity, li.activity")) {
         // Determine type
         const cls = el.className || "";
         let type = null;
         if (cls.includes("modtype_assign"))  type = "assign";
         else if (cls.includes("modtype_quiz")) type = "quiz";
         else if (cls.includes("modtype_forum")) type = "forum";
-        if (!type) return;
+        if (!type) continue;
 
         // ── Skip activities already marked as done ──────────────────
         // Moodle marks completion in several ways — check all of them.
@@ -170,14 +171,14 @@ const MAGIC_SCRIPT = `(async () => {
           if (cls.includes("complete") && !cls.includes("incomplete")) return true;
           return false;
         })();
-        if (isDone) return;
+        if (isDone) continue;
 
         const a = el.querySelector("a[href]");
-        if (!a) return;
+        if (!a) continue;
         const actId = new URL(a.href).searchParams.get("id");
-        if (!actId) return;
+        if (!actId) continue;
         const uid = course.course_id + "_" + actId;
-        if (seen.has(uid)) return;
+        if (seen.has(uid)) continue;
         seen.add(uid);
 
         // Activity name — text nodes only
@@ -189,7 +190,7 @@ const MAGIC_SCRIPT = `(async () => {
           if (t && !/^(Mark as done|Done|Completed|Undo)$/i.test(t)) nameParts.push(t);
         }
         const name = nameParts.join(" ").replace(/\\s+/g," ").trim();
-        if (!name || name.length < 2) return;
+        if (!name || name.length < 2) continue;
 
         // Due date — several possible locations in Moodle DOM
         let dueDate = null;
@@ -216,6 +217,63 @@ const MAGIC_SCRIPT = `(async () => {
           if (m) { const p = Date.parse(m[0].trim()); if (!isNaN(p)) dueDate = new Date(p).toISOString(); }
         }
 
+        // ── STEP 2b: Check actual submission/attempt status ─────────
+        // Completion marks (isDone above) only fire if the student manually
+        // ticked "Done" or if auto-completion is configured. Many BULMS
+        // courses don't use that — so an already-submitted assignment can
+        // still appear incomplete. We fetch the activity page itself and
+        // read the submission status Moodle renders there.
+        if (type === "assign" || type === "quiz") {
+          try {
+            const ar = await fetch(a.href);
+            const ah = await ar.text();
+            const adoc = new DOMParser().parseFromString(ah, "text/html");
+            const bodyTxt = (adoc.body?.innerText || adoc.body?.textContent || "").toLowerCase();
+
+            if (type === "assign") {
+              // Moodle shows a summary table: "Submission status | Submitted for grading"
+              // Also catches: "Graded", "Requires grading" (already submitted)
+              const submitted =
+                bodyTxt.includes("submitted for grading") ||
+                bodyTxt.includes("requires grading") ||
+                adoc.querySelector(".submissionstatussubmitted") !== null ||
+                (() => {
+                  // Walk the submission summary table rows
+                  const rows = adoc.querySelectorAll(".submissionsummarytable tr, .generaltable tr");
+                  for (const row of rows) {
+                    const cells = row.querySelectorAll("td");
+                    if (cells.length >= 2) {
+                      const label = (cells[0].textContent || "").toLowerCase();
+                      const value = (cells[1].textContent || "").toLowerCase();
+                      if (label.includes("submission status") &&
+                          (value.includes("submitted") || value.includes("graded")) &&
+                          !value.includes("not submitted") &&
+                          !value.includes("draft (not submitted)")) return true;
+                    }
+                  }
+                  return false;
+                })();
+              if (submitted) { console.log(\`    ✅ Already submitted: \${name}\`); continue; }
+            }
+
+            if (type === "quiz") {
+              // Moodle shows previous attempts; "Finished" = already attempted
+              const finished =
+                bodyTxt.includes("review") ||
+                adoc.querySelector(".quizattempt, .lastcol.c3") !== null ||
+                (() => {
+                  // Check attempts table for a "Finished" state
+                  const cells = adoc.querySelectorAll("table.quizattemptsummary td, .generaltable td");
+                  for (const cell of cells) {
+                    if ((cell.textContent || "").trim().toLowerCase() === "finished") return true;
+                  }
+                  return false;
+                })();
+              if (finished) { console.log(\`    ✅ Already attempted: \${name}\`); continue; }
+            }
+          } catch(e) { /* network error — include activity to be safe */ }
+        }
+
         activities.push({
           course_id:     course.course_id,
           course_name:   course.course_name,
@@ -225,7 +283,7 @@ const MAGIC_SCRIPT = `(async () => {
           activity_url:  a.href,
           due_date:      dueDate,
         });
-      });
+      }
     } catch(e) { console.warn("  ⚠ Error on", course.course_name, e.message); }
   }
 
@@ -253,7 +311,8 @@ const MAGIC_SCRIPT = `(async () => {
       </div>
       <p style="color:#94a3b8;font-size:13px;margin:0 0 14px;">
         Found <strong style="color:#22c55e">\${courses.length} subjects</strong> and
-        <strong style="color:#22c55e">\${activities.length} activities</strong>.
+        <strong style="color:#22c55e">\${activities.length} pending activities</strong>
+        (already-submitted assignments and finished quiz attempts were skipped).
         Click <strong>Copy</strong> then paste into BUPulse.
       </p>
       <textarea id="__bupulse_ta" readonly style="
@@ -706,6 +765,7 @@ export default function BulmsSync() {
             {[
               ["📚", "Real course names (skips \"Course image\" noise)"],
               ["📋", "Assignments and quizzes per course"],
+              ["✅", "Skips already-submitted assignments and finished quiz attempts"],
               ["🗓", "Due dates from Moodle activity pages"],
               ["🔗", "Direct links to each activity"],
             ].map(([icon, text]) => (
