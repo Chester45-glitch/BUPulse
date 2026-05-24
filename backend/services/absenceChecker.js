@@ -2,18 +2,20 @@
  * services/absenceChecker.js
  * ══════════════════════════════════════════════════════════════════
  * Checks every VERIFIED attendance record for students who appear
- * absent (or not listed at all) 3 consecutive times in the same class.
+ * absent (or not listed at all) 3 or more times in the same class.
  *
  * LOGIC:
  *   For each class that has verified attendance records:
- *     1. Get all enrolled students (from user_courses)
- *     2. Get the last N verified records, sorted newest first
- *     3. For each student, check if they are absent/unlisted in the
- *        last 3 consecutive verified records
- *     4. If yes — send email to:
- *          • the student
- *          • the professor (verifier of the records)
- *          • linked parents (from parent_links)
+ *     1. Get ALL verified records for the class (newest first)
+ *     2. Get all enrolled students (role=student only) with notifications prefs
+ *     3. For each student, count total absences across all verified records.
+ *        A student is "absent" in a record if:
+ *          - They are not listed at all (unlisted = absent), OR
+ *          - Their status is "absent" OR "late"
+ *     4. If total absences >= 3 — send email to:
+ *          • the student (only if notifications_enabled)
+ *          • the professor (verifier of the most recent record, always)
+ *          • linked parents (from parent_links, always)
  *        Only if an alert hasn't been sent for this student+class today.
  *
  * Called from: scheduler.js (every 6 hours)
@@ -48,7 +50,7 @@ const studentInRecord = (studentName, names = []) => {
   });
 };
 
-// Check if student is "absent" in record — either explicitly marked absent
+// Check if student is "absent" in record — either explicitly marked absent/late
 // or not listed at all (i.e., not found in the names array)
 const isAbsentInRecord = (studentName, record) => {
   const names = record.names || [];
@@ -56,13 +58,13 @@ const isAbsentInRecord = (studentName, record) => {
   // Not listed at all → treat as absent
   if (!studentInRecord(studentName, names)) return true;
 
-  // Listed but status is absent or late
+  // Listed but status is absent or late — both count as an absence
   const normalStudent = normalizeName(studentName);
   const entry = names.find(n => {
     const ne = normalizeName(n.name || "");
     return ne === normalStudent || ne.includes(normalStudent) || normalStudent.includes(ne);
   });
-  return entry?.status === "absent";
+  return entry?.status === "absent" || entry?.status === "late";
 };
 
 // ── Email templates ──────────────────────────────────────────────
@@ -161,21 +163,20 @@ const checkAbsences = async (specificClassId = null) => {
 };
 
 const checkClassAbsences = async (classId, className) => {
-  // Get last N verified records for this class, newest first
+  // Get ALL verified records for this class (newest first) — we need total count
   const { data: records } = await supabase
     .from("class_attendance")
-    .select("id, names, verified_by, verified_at, poster:posted_by(id, name, email)")
+    .select("id, names, verified_by, verified_at, record_date, poster:posted_by(id, name, email)")
     .eq("class_id", classId)
     .eq("is_verified", true)
-    .order("record_date", { ascending: false })
-    .limit(CONSECUTIVE_THRESHOLD + 2); // fetch a few extra for accuracy
+    .order("record_date", { ascending: false });
 
   if (!records || records.length < CONSECUTIVE_THRESHOLD) return;
 
-  // Get all students enrolled in this class
+  // Get all students enrolled in this class — include role and notifications_enabled
   const { data: enrolled } = await supabase
     .from("user_courses")
-    .select("user_id, users:user_id(id, name, email)")
+    .select("user_id, users:user_id(id, name, email, role, notifications_enabled)")
     .eq("course_id", classId);
 
   if (!enrolled?.length) return;
@@ -196,14 +197,25 @@ const checkClassAbsences = async (classId, className) => {
     const student = enrollment.users;
     if (!student?.name) continue;
 
-    // Skip the professor — only students can be considered absent
+    // Only process actual students — skip professors/parents enrolled in the class
+    if (student.role !== "student") continue;
+
+    // Skip the professor who verified (in case they're also enrolled as a student)
     if (professorRow && student.id === professorRow.id) continue;
 
-    // Check last CONSECUTIVE_THRESHOLD records
-    const lastRecords = records.slice(0, CONSECUTIVE_THRESHOLD);
-    const allAbsent   = lastRecords.every(r => isAbsentInRecord(student.name, r));
+    // ── Count total absences across ALL verified records ─────────
+    const totalAbsences = records.filter(r => isAbsentInRecord(student.name, r)).length;
 
-    if (!allAbsent) continue;
+    // Trigger when total absences >= threshold (not just consecutive)
+    if (totalAbsences < CONSECUTIVE_THRESHOLD) continue;
+
+    // Also check if the last CONSECUTIVE_THRESHOLD records are all absences
+    // (consecutive streak check — either condition triggers the alert)
+    const lastRecords    = records.slice(0, CONSECUTIVE_THRESHOLD);
+    const hasConsecutive = lastRecords.every(r => isAbsentInRecord(student.name, r));
+
+    // Must meet at least one condition: total >= 3 OR last 3 are consecutive
+    if (totalAbsences < CONSECUTIVE_THRESHOLD && !hasConsecutive) continue;
 
     // Check if we've already sent an alert for this student+class today
     const today = new Date().toISOString().split("T")[0];
@@ -218,16 +230,18 @@ const checkClassAbsences = async (classId, className) => {
     if (existing) continue; // Already alerted today
 
     // ── Send emails ──────────────────────────────────────────────
-    console.log(`[AbsenceChecker] Sending alert: ${student.name} — ${className} (${CONSECUTIVE_THRESHOLD} absences)`);
+    console.log(`[AbsenceChecker] Sending alert: ${student.name} — ${className} (${totalAbsences} absences)`);
 
     try {
-      // 1. Email to student
-      const stuMail = buildStudentEmail(student.name, className, CONSECUTIVE_THRESHOLD);
-      await sendSystemEmail(student.email, stuMail.subject, stuMail.html);
+      // 1. Email to student (only if they have notifications enabled)
+      if (student.notifications_enabled) {
+        const stuMail = buildStudentEmail(student.name, className, totalAbsences);
+        await sendSystemEmail(student.email, stuMail.subject, stuMail.html);
+      }
 
-      // 2. Email to professor
+      // 2. Email to professor (always — professor needs to know regardless)
       if (professorRow && professorRow.email !== student.email) {
-        const profMail = buildProfessorEmail(student.name, student.email, className, CONSECUTIVE_THRESHOLD);
+        const profMail = buildProfessorEmail(student.name, student.email, className, totalAbsences);
         await sendSystemEmail(professorRow.email, profMail.subject, profMail.html);
       }
 
@@ -240,7 +254,7 @@ const checkClassAbsences = async (classId, className) => {
       for (const link of (parentLinks || [])) {
         const parent = link.parent;
         if (!parent?.email) continue;
-        const parentMail = buildParentEmail(parent.name, student.name, className, CONSECUTIVE_THRESHOLD);
+        const parentMail = buildParentEmail(parent.name, student.name, className, totalAbsences);
         await sendSystemEmail(parent.email, parentMail.subject, parentMail.html).catch(() => {});
       }
 
@@ -250,7 +264,7 @@ const checkClassAbsences = async (classId, className) => {
         class_id:    classId,
         class_name:  className,
         alert_date:  new Date().toISOString().split("T")[0],
-        consecutive: CONSECUTIVE_THRESHOLD,
+        consecutive: totalAbsences,
       });
     } catch (err) {
       console.error(`[AbsenceChecker] Email error for ${student.email}:`, err.message);
